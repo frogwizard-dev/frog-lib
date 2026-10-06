@@ -1,5 +1,6 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/">
 	<Script file="FrogLib.lua"/>
+	<Script file="Util.lua"/>
 	<Script file="Options.lua"/>
 	<Script file="Media.lua"/>
 	<Script file="Borders.lua"/>
@@ -15,4 +16,11 @@
 	<Script file="Unit.lua"/>
 	<Script file="Icons.lua"/>
 	<Script file="Secure.lua"/>
+	<Script file="Gauge.lua"/>
+	<Script file="Grid.lua"/>
+	<Script file="Sheet.lua"/>
+	<Script file="Auras.lua"/>
+	<Script file="Combo.lua"/>
+	<Script file="Mover.lua"/>
+	<Script file="UI.lua"/>
 </Ui>

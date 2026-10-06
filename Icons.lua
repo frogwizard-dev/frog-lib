@@ -14,7 +14,7 @@
 --       are flagged too), quest (a quest boss), class (players only)
 --   FrogLib.Icons.PREVIEW[key](region, size) -> true, with a sample set (raid, leader, class)
 
-local Icons = FrogLib:Module("Icons", 1)
+local Icons = FrogLib:Module("Icons", 2) -- 2: a failed mark clears the text
 if not Icons then return end
 
 local Safe = FrogLib.Safe
@@ -31,7 +31,9 @@ end
 
 function Icons.SetRaidMark(fs, index, size)
     if not FrogLib.issecret(index) and not index then return false end
-    return (pcall(fs.SetFormattedText, fs, Icons.RaidMarkup(size), index))
+    local ok = pcall(fs.SetFormattedText, fs, Icons.RaidMarkup(size), index)
+    if not ok then fs:SetText("") end -- not the last mark
+    return ok
 end
 
 function Icons.RaidMark(fs, unit, size)

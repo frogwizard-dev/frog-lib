@@ -20,7 +20,7 @@
 --       "MANA", or its number); without kind, the unit's own power; mana when it can't tell.
 --   FrogLib.Color.PowerToken(token) -> r, g, b, or nil: the game's colour for a power's token
 
-local Color = FrogLib:Module("Color", 1)
+local Color = FrogLib:Module("Color", 2) -- 2: secret checks first
 if not Color then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -114,8 +114,10 @@ end
 
 function Color.Power(unit, kind)
     local colors, c = _G.PowerBarColor or {}, nil
-    if kind ~= nil then
-        if not issecret(kind) then c = colors[kind] end
+    if issecret(kind) then
+        c = nil -- hidden: the default below
+    elseif kind ~= nil then
+        c = colors[kind]
     elseif unit then
         local k, token = UnitPowerType(unit)
         k, token = Safe(k), Safe(token)

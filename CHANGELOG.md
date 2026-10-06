@@ -1,5 +1,17 @@
 # FrogLib
 
+## 1.1.0
+
+- Settings controls: the checkboxes, steppers, sliders, dropdowns, colour swatches, text boxes, sections that open and close, and tabbed settings windows every add-on's settings are built from, in one place instead of a copy in each. Dropdowns show the current choice afresh when their page opens, and shift-clicking + or - moves ten steps, in every add-on.
+- Saved settings filled in from their defaults, and each add-on's chat messages, from one place.
+- FFXIV gauges (the XIV add-ons' and EnmityList's bars, with absorb shields), from one place; FrogTarget's bars share the shields.
+- One layout grid for every add-on that's unlocked (FrogTarget, FrogFrames): locking one no longer hides the grid while the other is still unlocked.
+- The character window's width when both FrogUI and StatSheet widen it: it grows by both.
+- The building blocks of the buff and debuff rows (FrogTarget, XIVTarget, FrogFrames, XIVPlayer, Personal Resource Tweaks), from one place.
+- Combo points, the spell lists and aura picker in the settings, showing one of the three border styles, and dragging frames to move them (kept in the add-on's settings only, never also in the game's layout file), each from one place.
+- A row of combo point pips any add-on can draw in its own look (XIVTarget's and FrogTarget's new combo points).
+- A raid mark that can't be shown now clears instead of leaving the last mark; hidden power types and threat are checked for before anything else is done with them.
+
 ## 1.0.0
 
 - First version, on its own: the code Frog Wizard's add-ons share (their "Frog Wizard" options page, texture and font lists, pixel, classic stone and Forever borders, and the threat lead). Each add-on still carries its own copy, added when it's built, so nothing extra needs installing; with several loaded, the newest copy is the one used.

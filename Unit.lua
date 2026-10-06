@@ -23,7 +23,7 @@
 --       (no unit), its class word coloured from fake.classFile ("PALADIN"); with `power`, a
 --       sample's value, max and percent are taken from its power words if it has them.
 
-local Unit = FrogLib:Module("Unit", 1)
+local Unit = FrogLib:Module("Unit", 2) -- 2: IsPlayer; secret checks first
 if not Unit then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -86,9 +86,18 @@ end
 
 -- The power's name as the game prints it: the global string named by its token, or the token
 -- tidied up.
+-- Whether unit is you: true, false, or nil when the game hides it (and your GUIDs too).
+function Unit.IsPlayer(unit)
+    local same = UnitIsUnit(unit, "player")
+    if not issecret(same) then return same and true or false end
+    local a, b = UnitGUID(unit), UnitGUID("player")
+    if issecret(a) or issecret(b) or a == nil then return nil end
+    return a == b
+end
+
 function Unit.PowerTypeName(unit, kind)
     local token
-    if kind ~= nil and not issecret(kind) then
+    if not issecret(kind) and kind ~= nil then
         for name, value in pairs(Enum and Enum.PowerType or NONE) do
             if value == kind then token = name:gsub("(%l)(%u)", "%1_%2"):upper() end
         end

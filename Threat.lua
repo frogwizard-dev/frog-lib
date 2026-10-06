@@ -9,7 +9,7 @@
 --   FrogLib.Threat.Snapshot(unit) -> lines of text: what the game lets addons see of the threat
 --                                    on the unit (for a /... threat report).
 
-local Threat = FrogLib:Module("Threat", 2) -- 2: Short, FormatGap, SetGapText
+local Threat = FrogLib:Module("Threat", 3) -- 2: Short, FormatGap, SetGapText; 3: secret checks first
 if not Threat then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -31,12 +31,12 @@ end
 
 function Threat.Gap(unit)
     local _, _, _, _, mine = UnitDetailedThreatSituation("player", unit)
-    if mine == nil or issecret(mine) then return nil end
+    if issecret(mine) or mine == nil then return nil end
     local best
     ForEachOther(function(who)
         if not UnitExists(who) or Safe(UnitIsUnit(who, "player")) ~= false then return end
         local _, _, _, _, v = UnitDetailedThreatSituation(who, unit)
-        if v ~= nil and not issecret(v) and v > 0 and (not best or v > best) then best = v end
+        if not issecret(v) and v ~= nil and v > 0 and (not best or v > best) then best = v end
     end)
     -- In a group with nobody else on it yet, your lead is all of your threat.
     if not best then return IsInGroup() and mine or nil end

@@ -12,9 +12,15 @@
 --       so nothing stretches but its straight edges. It sits 2 texels out from the bar, its inner
 --       line over the fill's edge. f:SetShown(on).
 -- Pixel sizes change with the frame's scale: place them again when it changes.
+--   FrogLib.Borders.Show(parts, style, o): one of a bar's three borders shown, the others hidden.
+--       parts = { edges =, stone =, forever = } (any may be missing); style "pixel", "classic" or
+--       "forever"; o.size (edges, screen pixels; 0 hides them), o.color (edges), o.stoneColor,
+--       o.thickness (Forever).
+--   FrogLib.Borders.Reach(style, o, px) -> how far that border reaches outside the bar, in screen
+--       pixels (px: one screen pixel in the bar's units, for the stone's 3 units).
 
 local ADDON = ...
-local Borders = FrogLib:Module("Borders", 2)
+local Borders = FrogLib:Module("Borders", 3) -- 3: Show, Reach
 if not Borders then return end
 
 local Pixel, NoSnap = FrogLib.Pixel, FrogLib.NoSnap
@@ -150,4 +156,32 @@ end
 -- Its textures, for code that needs to tell them apart from the game's (PRT hides the rest).
 function Forever:Textures()
     return self.parts
+end
+
+------------------------------------------------------------------------------
+-- One of the three
+------------------------------------------------------------------------------
+
+function Borders.Show(parts, style, o)
+    o = o or {}
+    local size = o.size or 1
+    if parts.edges then
+        if style == "pixel" and size > 0 then parts.edges:Place(size, 0, o.color) end
+        parts.edges:SetShown(style == "pixel" and size > 0)
+    end
+    if parts.stone then
+        if style == "classic" and o.stoneColor then Borders.ColorStone(parts.stone, o.stoneColor) end
+        parts.stone:SetShown(style == "classic")
+    end
+    if parts.forever then
+        if style == "forever" then parts.forever:Place(o.thickness) end
+        parts.forever:SetShown(style == "forever")
+    end
+end
+
+function Borders.Reach(style, o, px)
+    o = o or {}
+    if style == "forever" then return FRAME_OUT * (o.thickness or 1) end
+    if style == "classic" then return math.ceil(3 / px) end
+    return math.max(0, o.size or 1)
 end
