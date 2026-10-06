@@ -1,0 +1,18 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<Script file="FrogLib.lua"/>
+	<Script file="Options.lua"/>
+	<Script file="Media.lua"/>
+	<Script file="Borders.lua"/>
+	<Script file="Threat.lua"/>
+	<Script file="Hider.lua"/>
+	<Script file="Curve.lua"/>
+	<Script file="Idle.lua"/>
+	<Script file="Swing.lua"/>
+	<Script file="Cast.lua"/>
+	<Script file="FSR.lua"/>
+	<Script file="Text.lua"/>
+	<Script file="Color.lua"/>
+	<Script file="Unit.lua"/>
+	<Script file="Icons.lua"/>
+	<Script file="Secure.lua"/>
+</Ui>
