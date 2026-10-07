@@ -22,5 +22,6 @@
 	<Script file="Auras.lua"/>
 	<Script file="Combo.lua"/>
 	<Script file="Mover.lua"/>
+	<Script file="StatList.lua"/>
 	<Script file="UI.lua"/>
 </Ui>

@@ -1,5 +1,9 @@
 # FrogLib
 
+## 1.2.0
+
+- The character sheet's stats as one long list, filled by the game's own stat functions (FrogUI's stats pane and StatSheet's List tab).
+
 ## 1.1.0
 
 - Settings controls: the checkboxes, steppers, sliders, dropdowns, colour swatches, text boxes, sections that open and close, and tabbed settings windows every add-on's settings are built from, in one place instead of a copy in each. Dropdowns show the current choice afresh when their page opens, and shift-clicking + or - moves ten steps, in every add-on.

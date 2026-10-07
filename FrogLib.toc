@@ -2,7 +2,7 @@
 ## Title: FrogLib
 ## Category: Frog Wizard
 ## Notes: The code Frog Wizard's addons share: their options page, texture and font lists, borders, threat, hiding Blizzard's frames, fading when idle, swing timers, cast bars, the five-second rule, text templates, unit colours, names and levels, raid marks and click-to-target buttons. Each of them already carries a copy, so this only needs installing on its own if you want the newest one.
-## Version: 1.1.0
+## Version: 1.2.0
 ## IconTexture: Interface\Icons\INV_Misc_Toy_10
 
 FrogLib.xml
