@@ -11,11 +11,14 @@
 --   FrogLib.Combo.Active()  -> whether they're in use now: rogues always, druids in cat form
 --   FrogLib.Combo.Max()     -> how many you can have (5 unless the game says otherwise; 10 at most)
 --   FrogLib.Combo.Points()  -> your points on your target. May be secret: widgets only.
+--   FrogLib.Combo.Lit(points, i, max) -> 1 when you have at least i of your max points, else 0
+--       (one point's opacity, for points drawn as art rather than bars); secret when the count
+--       is, then worked out by the game through a curve on your combo points.
 --   FrogLib.Combo.Watch(onPoints, onChange): events; onPoints() when the count may have changed
 --       (power, a new target), onChange() when whether they show or how many may have (a form,
 --       the max, the world).
 
-local Combo = FrogLib:Module("Combo", 1)
+local Combo = FrogLib:Module("Combo", 2) -- 2: Lit
 if not Combo then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -109,6 +112,14 @@ function Row:Layout(width, height, gap, size)
         p.bar:SetPoint("TOPLEFT", self.holder, "TOPLEFT", x, 0)
         x = x + w + gap
     end
+end
+
+function Combo.Lit(points, i, max)
+    if not issecret(points) then return (type(points) == "number" and points >= i) and 1 or 0 end
+    local Curve = FrogLib.Curve
+    local alpha = Curve and Curve.Power("player", Curve.Below((i - 0.5) / max, 0, 1), POINTS)
+    if issecret(alpha) or alpha ~= nil then return alpha end
+    return 0
 end
 
 -- 1 with points, 0 without; secret when the count is. Shown when it can't be told.

@@ -23,5 +23,6 @@
 	<Script file="Combo.lua"/>
 	<Script file="Mover.lua"/>
 	<Script file="StatList.lua"/>
+	<Script file="CVar.lua"/>
 	<Script file="UI.lua"/>
 </Ui>

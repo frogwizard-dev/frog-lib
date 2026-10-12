@@ -4,14 +4,15 @@
 --       fallbackFont = "...",  -- for a font file that won't load (default: the game's own)
 --   })
 --   ns.Media:List("statusbar" | "font") -> { { title = group, items = { { name =, path = } } } }
---   ns.Media:SetFont(fs, path, size, outline)
+--   ns.Media:SetFont(fs, path, size, outline)  outline: the game's ("", "OUTLINE", "THICKOUTLINE"...)
+--       or "SHADOW": no outline, a drop shadow (black, down and right) instead
 --   FrogLib.Media.Register(kind, name, path)  -- listed by every addon as "Frog" (FrogUI's bars)
 --   FrogLib.Media.Usable(path) -> false for a file inside an addon that isn't loaded (FrogUI's
 --       textures without FrogUI), which can't be used
 -- An addon's own fonts are listed as "Bundled"; then Frog, the game's own, EllesmereUI's and
 -- anything shared through LibSharedMedia. Built fresh each time, so late additions show up.
 
-local Media = FrogLib:Module("Media", 2) -- 2: Usable
+local Media = FrogLib:Module("Media", 3) -- 2: Usable; 3: the "SHADOW" outline
 if not Media then return end
 
 local GROUPS = { "Bundled", "Frog", "Blizzard", "EllesmereUI", "Shared media" }
@@ -124,6 +125,22 @@ end
 function Instance:SetFont(fs, path, size, outline)
     if not fs then return end
     local wanted = path .. "|" .. size .. "|" .. (outline or "")
+    -- A drop shadow in place of an outline; taken off again when another outline is chosen (an
+    -- addon's own shadow, set without it, is left alone).
+    local shadow = outline == "SHADOW"
+    if shadow then
+        outline = ""
+        -- At least one whole screen pixel down and right, so text drawn small (nameplates) still
+        -- shows it rather than a smudge.
+        local ok, px = pcall(FrogLib.Pixel, fs)
+        local d = (ok and px and px > 1) and px or 1
+        fs:SetShadowColor(0, 0, 0, 1)
+        fs:SetShadowOffset(d, -d)
+        fs.frogShadow = true
+    elseif fs.frogShadow then
+        fs.frogShadow = nil
+        fs:SetShadowOffset(0, 0)
+    end
     fs.frogFont = wanted
     local usable = not FromMissingAddOn(path)
     local ok, set = false, false

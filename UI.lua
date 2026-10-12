@@ -23,18 +23,23 @@
 --     UI.SpellInfo(id) -> name, icon, UI.AuraPicker(owner, kind, onAdd(id), say(text)) -> window
 --   Layout:
 --     UI.Placer(page) -> place(widget, height, x): down the page; with `page`, it grows to fit.
+--     UI.Column(page, x, width) -> place(widget, height, dx), head(text): a column at x of headed
+--         groups (a gold heading with a faint rule under it, a gap above each but the first).
 --     UI.Sections(page, open, width) -> Add(key, title, defaultOpen) -> place, body; and Relayout().
 --         Headers that open and close; which are open is kept in `open` (saved settings).
 --     UI.Window(globalName, title, width, height, pages, wopts) -> frame, contents
 --         pages = { { key, label, build(content) } }; wopts.tabWidth (100), wopts.tabGap (4),
 --         wopts.fitTabs (share the width out), wopts.scroll (each page scrolls; build on its
---         content), wopts.onSelect(key).
+--         content), wopts.onSelect(key), wopts.search (false: no search box; the window grows
+--         a row taller for it). wopts.sidebar: a searchable list down the left instead of
+--         tabs, the pages scrolling; { heading = "Bars" } among the pages heads the ones after it.
 --   Text templates (FrogLib.Text): UI.Compile(template, strings), UI.SetTemplateText(fs, template, vals, strings)
 --
 -- A kit looks its controls up here each time, so a newer copy of FrogLib's apply to it. An addon
 -- can add its own fields to its kit.
 
-local UI = FrogLib:Module("UI", 1)
+local UI = FrogLib:Module("UI", 4) -- 2: "Drop shadow" among the outlines; 3: UI.Column, sidebar windows;
+-- 4: a search box on tabbed windows
 if not UI then return end
 
 UI.Controls = UI.Controls or {}
@@ -57,7 +62,7 @@ end
 
 function UI.Kit(opts)
     local k = setmetatable({ opts = opts or {} }, UI.KitMeta)
-    k.OUTLINES = C.Options(k, "", "None", "OUTLINE", "Outline", "THICKOUTLINE", "Thick outline")
+    k.OUTLINES = C.Options(k, "", "None", "SHADOW", "Drop shadow", "OUTLINE", "Outline", "THICKOUTLINE", "Thick outline")
     return k
 end
 
@@ -444,11 +449,37 @@ function C.Placer(_, page)
     end
 end
 
+function C.Column(_, page, x, width)
+    local y = 0
+    width = width or 450
+    local function place(w, h, dx)
+        w:SetPoint("TOPLEFT", x + (dx or 0), -y)
+        y = y + h
+        -- A scrolling page grows to fit its longest column.
+        if page.GetHeight and (page:GetHeight() or 0) < y + 4 then page:SetHeight(y + 4) end
+    end
+    local function head(text)
+        if y > 0 then y = y + 14 end
+        local f = CreateFrame("Frame", nil, page)
+        f:SetSize(width, 22)
+        local fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        fs:SetPoint("TOPLEFT")
+        fs:SetText(text)
+        local rule = f:CreateTexture(nil, "ARTWORK")
+        rule:SetColorTexture(1, 0.82, 0, 0.25)
+        rule:SetPoint("TOPLEFT", 0, -16)
+        rule:SetSize(width, 1)
+        place(f, 26)
+    end
+    return place, head
+end
+
 local PLUS, MINUS = "Interface\\Buttons\\UI-PlusButton-Up", "Interface\\Buttons\\UI-MinusButton-Up"
 
 function C.Sections(k, page, open, width)
     local list = {}
     local function IsOpen(s)
+        if s.peek then return true end -- opened by a search, not saved
         local v = open[s.key]
         if v == nil then return s.default end
         return v
@@ -470,6 +501,9 @@ function C.Sections(k, page, open, width)
         end
         page:SetHeight(y + 10)
     end
+    -- A tabbed window's search finds these, and opens the sections with what it found.
+    page.frogSections = page.frogSections or {}
+    table.insert(page.frogSections, { list = list, relayout = Relayout })
     -- Adds a section; returns its placer. defaultOpen: open until the user closes it.
     local function Add(key, title, defaultOpen)
         local s = { key = key, default = defaultOpen and true or false }
@@ -486,16 +520,289 @@ function C.Sections(k, page, open, width)
         s.icon:SetPoint("LEFT", 4, 0)
         C.Label(k, header, title):SetPoint("LEFT", s.icon, "RIGHT", 6, 0)
         header:SetScript("OnClick", function()
-            open[s.key] = not IsOpen(s)
+            if s.peek then
+                s.peek = nil -- opened by a search: back to how it was
+            else
+                open[s.key] = not IsOpen(s)
+            end
             Relayout()
         end)
         s.header = header
         s.body = CreateFrame("Frame", nil, page)
         s.body:SetSize(width, 1)
+        s.body.frogSection = s
         list[#list + 1] = s
         return C.Placer(k, s.body), s.body
     end
     return Add, Relayout
+end
+
+------------------------------------------------------------------------------
+-- A settings window with a sidebar instead of tabs (wopts.sidebar): a search box, then the
+-- pages in a list under their headings ({ heading = "Bars" } among the pages). Each page scrolls.
+-- Typing in the search box keeps only the pages whose words (every label, current choice and help
+-- line on them) have it, and marks those words on the page; picking a page scrolls to the
+-- first.
+------------------------------------------------------------------------------
+
+local SIDE_W, ROW_H, HEAD_H = 170, 20, 24
+
+-- Every font string on a page, its own and its controls'.
+local function Words(frame, out)
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if type(region) == "table" and region.GetObjectType and region:GetObjectType() == "FontString" then
+            out[#out + 1] = region
+        end
+    end
+    for _, child in ipairs({ frame:GetChildren() }) do
+        if type(child) == "table" then Words(child, out) end
+    end
+    return out
+end
+
+local function Plain(text)
+    if type(text) ~= "string" then return "" end
+    return (text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):lower())
+end
+
+local function Mark(fs, on)
+    if not fs.frogMark then
+        if not on then return end
+        local parent = fs:GetParent()
+        if not (parent and parent.CreateTexture) then return end
+        local t = parent:CreateTexture(nil, "BACKGROUND")
+        t:SetColorTexture(1, 0.82, 0, 0.22)
+        t:SetPoint("TOPLEFT", fs, "TOPLEFT", -3, 2)
+        t:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", 3, -2)
+        fs.frogMark = t
+    end
+    fs.frogMark:SetShown(on)
+end
+
+-- Whether a font string is on show on its page: it and every frame up to the page shown, a
+-- closed section's body (which a search opens) counting as shown.
+local function OnPage(fs, content)
+    if not fs:IsShown() then return false end
+    local p = fs:GetParent()
+    while p and p ~= content do
+        if not p:IsShown() and not p.frogSection then return false end
+        p = p:GetParent()
+    end
+    return p == content
+end
+
+-- Every set of sections (UI.Sections) on a page.
+local function SectionSets(frame, out)
+    if frame.frogSections then
+        for _, set in ipairs(frame.frogSections) do out[#out + 1] = set end
+    end
+    for _, child in ipairs({ frame:GetChildren() }) do
+        if type(child) == "table" then SectionSets(child, out) end
+    end
+    return out
+end
+
+-- Marks the words on a page that have `query` (nil: none), opens the sections they're in for as
+-- long as the search lasts, and says whether there were any. The words are read afresh each
+-- time, as pages can change.
+local function FindOnPage(content, query)
+    local sets = SectionSets(content, {})
+    for _, set in ipairs(sets) do
+        for _, s in ipairs(set.list) do s.peek = nil end
+    end
+    local any = false
+    for _, fs in ipairs(Words(content, {})) do
+        local hit = query ~= nil and OnPage(fs, content) and Plain(fs:GetText()):find(query, 1, true) ~= nil
+        Mark(fs, hit)
+        if hit then
+            any = true
+            local p = fs:GetParent()
+            while p and p ~= content do
+                if p.frogSection then p.frogSection.peek = true end
+                p = p:GetParent()
+            end
+        end
+    end
+    for _, set in ipairs(sets) do set.relayout() end
+    return any
+end
+
+-- Scrolls a scrolling page to its first marked word.
+local function ScrollToMark(page, content)
+    if not (page and page.SetVerticalScroll) then return end
+    local top, first = content:GetTop(), nil
+    for _, fs in ipairs(Words(content, {})) do
+        if fs.frogMark and fs.frogMark:IsShown() and fs:GetTop() and top then
+            local off = top - fs:GetTop()
+            if not first or off < first then first = off end
+        end
+    end
+    if first then page:SetVerticalScroll(math.max(0, first - 40)) end
+end
+
+-- A search box: the game's own (with its grey "Search" and clear button) where it has one.
+local function SearchBox(parent, width)
+    local ok, search = pcall(CreateFrame, "EditBox", nil, parent, "SearchBoxTemplate")
+    if not ok or not search then search = CreateFrame("EditBox", nil, parent, "InputBoxTemplate") end
+    search:SetSize(width, 20)
+    search:SetAutoFocus(false)
+    search:SetScript("OnEscapePressed", search.ClearFocus)
+    search:SetScript("OnEnterPressed", search.ClearFocus)
+    local hint = rawget(search, "Instructions") -- SearchBoxTemplate's grey "Search"
+    if type(hint) == "table" and hint.SetText then hint:SetText(SEARCH or "Search") end
+    return search
+end
+
+local function SidebarWindow(k, f, width, pages, wopts)
+    local side = CreateFrame("Frame", nil, f)
+    side:SetPoint("TOPLEFT", 12, -30)
+    side:SetPoint("BOTTOMLEFT", 12, 12)
+    side:SetWidth(SIDE_W)
+    local back = side:CreateTexture(nil, "BACKGROUND")
+    back:SetAllPoints()
+    back:SetColorTexture(0, 0, 0, 0.25)
+
+    local ok, search = pcall(CreateFrame, "EditBox", nil, side, "SearchBoxTemplate")
+    if not ok or not search then search = CreateFrame("EditBox", nil, side, "InputBoxTemplate") end
+    search:SetSize(SIDE_W - 16, 20)
+    search:SetPoint("TOPLEFT", 10, -6)
+    search:SetAutoFocus(false)
+    search:SetScript("OnEscapePressed", search.ClearFocus)
+    search:SetScript("OnEnterPressed", search.ClearFocus)
+    local hint = rawget(search, "Instructions") -- SearchBoxTemplate's grey "Search"
+    if type(hint) == "table" and hint.SetText then hint:SetText(SEARCH or "Search") end
+
+    local list = CreateFrame("Frame", nil, side)
+    list:SetPoint("TOPLEFT", 0, -34)
+    list:SetPoint("BOTTOMRIGHT")
+
+    local frames, contents, entries, byKey = {}, {}, {}, {}
+    local current, query
+    local function scrollToMark(key)
+        local page, content = frames[key], contents[key]
+        if not (page and page.SetVerticalScroll) then return end
+        local top = content:GetTop()
+        local first
+        if query then
+            for _, fs in ipairs(byKey[key].words) do
+                if fs.frogMark and fs.frogMark:IsShown() and fs:GetTop() and top then
+                    local off = top - fs:GetTop()
+                    if not first or off < first then first = off end
+                end
+            end
+        end
+        page:SetVerticalScroll(math.max(0, (first or 40) - 40))
+    end
+    local function select(key)
+        current = key
+        for key2, page in pairs(frames) do page:SetShown(key2 == key) end
+        for _, e in ipairs(entries) do
+            if e.selected then e.selected:SetShown(e.key == key) end
+        end
+        scrollToMark(key)
+        if wopts.onSelect then wopts.onSelect(key) end
+    end
+
+    for _, def in ipairs(pages) do
+        local e = {}
+        if def.heading then
+            e.heading = true
+            e.row = list:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            e.row:SetText(def.heading:upper())
+        else
+            local key = def[1]
+            e.key, e.label = key, def[2]
+            local b = CreateFrame("Button", nil, list)
+            b:SetSize(SIDE_W, ROW_H)
+            local fs = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            fs:SetPoint("LEFT", 16, 0)
+            fs:SetText(def[2])
+            local hl = b:CreateTexture(nil, "HIGHLIGHT")
+            hl:SetAllPoints()
+            hl:SetColorTexture(1, 1, 1, 0.08)
+            e.selected = b:CreateTexture(nil, "BACKGROUND")
+            e.selected:SetAllPoints()
+            e.selected:SetColorTexture(1, 0.82, 0, 0.2)
+            e.selected:Hide()
+            b:SetScript("OnClick", function() select(key) end)
+            e.row = b
+            local page = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+            page:SetPoint("TOPLEFT", SIDE_W + 28, -34)
+            page:SetPoint("BOTTOMRIGHT", -34, 12)
+            local content = CreateFrame("Frame", nil, page)
+            content:SetSize(width - SIDE_W - 72, 10)
+            page:SetScrollChild(content)
+            page:Hide()
+            frames[key], contents[key] = page, content
+            byKey[key] = e
+        end
+        entries[#entries + 1] = e
+    end
+
+    -- The list, with only the pages the search finds (and their headings).
+    local function Relayout()
+        local y, pendingHead = 0, nil
+        for _, e in ipairs(entries) do
+            if e.heading then
+                e.row:Hide()
+                pendingHead = e
+            elseif e.shown ~= false then
+                if pendingHead then
+                    pendingHead.row:ClearAllPoints()
+                    pendingHead.row:SetPoint("TOPLEFT", 10, -(y + 6))
+                    pendingHead.row:Show()
+                    y = y + HEAD_H
+                    pendingHead = nil
+                end
+                e.row:ClearAllPoints()
+                e.row:SetPoint("TOPLEFT", 0, -y)
+                e.row:Show()
+                y = y + ROW_H
+            else
+                e.row:Hide()
+            end
+        end
+    end
+
+    local function Search()
+        local text = strtrim and strtrim(search:GetText() or "") or (search:GetText() or "")
+        query = text ~= "" and text:lower() or nil
+        local firstShown
+        for _, e in ipairs(entries) do
+            if not e.heading then
+                local found = false
+                for _, fs in ipairs(e.words) do
+                    local hit = query and Plain(fs:GetText()):find(query, 1, true) and true or false
+                    Mark(fs, hit)
+                    found = found or hit
+                end
+                e.shown = not query or found or e.label:lower():find(query, 1, true) ~= nil
+                if e.shown and not firstShown then firstShown = e.key end
+            end
+        end
+        Relayout()
+        if current and byKey[current].shown then
+            select(current)
+        elseif firstShown then
+            select(firstShown)
+        end
+    end
+    search:HookScript("OnTextChanged", Search)
+
+    for _, def in ipairs(pages) do
+        if not def.heading and def[3] then def[3](contents[def[1]]) end
+    end
+    for key, e in pairs(byKey) do e.words = Words(contents[key], {}) end
+    Relayout()
+    for _, def in ipairs(pages) do
+        if not def.heading then
+            select(def[1])
+            break
+        end
+    end
+    f.Select = select
+    f.search = search
+    return f, contents
 end
 
 -- A movable settings window with a row of tabs.
@@ -513,13 +820,20 @@ function C.Window(k, globalName, title, width, height, pages, wopts)
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
     C.Label(k, f, title):SetPoint("TOP", 0, -5)
     if globalName then tinsert(UISpecialFrames, globalName) end
+    if wopts.sidebar then return SidebarWindow(k, f, width, pages, wopts) end
 
     local frames, contents, tabs = {}, {}, {}
+    local searching = wopts.search ~= false
+    local down = searching and 26 or 0 -- the search box's row, under the tabs
+    if searching then f:SetHeight(height + down) end
+    local current, query, found = nil, nil, {}
     local function select(key)
+        current = key
         for key2, page in pairs(frames) do page:SetShown(key2 == key) end
         for key2, tab in pairs(tabs) do
             if key2 == key then tab:LockHighlight() else tab:UnlockHighlight() end
         end
+        if query then ScrollToMark(frames[key], contents[key]) end
         if wopts.onSelect then wopts.onSelect(key) end
     end
     local tabW, step = wopts.tabWidth or 100, (wopts.tabWidth or 100) + (wopts.tabGap or 4)
@@ -538,14 +852,14 @@ function C.Window(k, globalName, title, width, height, pages, wopts)
         local page, content
         if wopts.scroll then
             page = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-            page:SetPoint("TOPLEFT", 16, -64)
+            page:SetPoint("TOPLEFT", 16, -64 - down)
             page:SetPoint("BOTTOMRIGHT", -34, 12)
             content = CreateFrame("Frame", nil, page)
             content:SetSize(width - 60, 10)
             page:SetScrollChild(content)
         else
             page = CreateFrame("Frame", nil, f)
-            page:SetPoint("TOPLEFT", 16, -62)
+            page:SetPoint("TOPLEFT", 16, -62 - down)
             page:SetPoint("BOTTOMRIGHT", -16, 12)
             content = page
         end
@@ -554,6 +868,33 @@ function C.Window(k, globalName, title, width, height, pages, wopts)
     for _, def in ipairs(pages) do
         if def[3] then def[3](contents[def[1]]) end
     end
+
+    -- The search: marks the words on every page that have it (opening the sections they're in),
+    -- dims the tabs with none, and moves to a page with some when this one has none.
+    if searching then
+        local search = SearchBox(f, 160)
+        search:SetPoint("TOPRIGHT", -18, -61)
+        local function Search()
+            local text = strtrim and strtrim(search:GetText() or "") or (search:GetText() or "")
+            query = text ~= "" and text:lower() or nil
+            local first
+            for _, def in ipairs(pages) do
+                local key = def[1]
+                local hit = FindOnPage(contents[key], query)
+                found[key] = hit or (query ~= nil and def[2]:lower():find(query, 1, true) ~= nil)
+                tabs[key]:SetAlpha((not query or found[key]) and 1 or 0.4)
+                if found[key] and not first then first = key end
+            end
+            if query and not found[current] and first then
+                select(first)
+            else
+                select(current)
+            end
+        end
+        search:HookScript("OnTextChanged", Search)
+        f.search = search
+    end
+
     select(pages[1][1])
     f.Select = select
     return f, contents

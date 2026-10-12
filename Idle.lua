@@ -20,7 +20,9 @@
 --   w:Settled(kind)     quiet for Idle.SETTLE seconds
 --   w:Evaluate(opts) -> idle, why, healthSecret. Never errors: when it can't tell, not idle.
 --       opts.unit (default the watcher's), opts.noTarget (a target stops it), opts.hover (the
---       mouse is over it), opts.unlocked (being moved), opts.editMode (Edit Mode open stops it).
+--       mouse is over it), opts.unlocked (being moved), opts.editMode (Edit Mode open stops it),
+--       opts.ignorePower (the power doesn't count: a pet's focus, which the game may hide and
+--       which ticks on even when it's full, so it never seems to settle).
 --       healthSecret: idle but for a health the game hides; fade through GateAlpha (or a fader
 --       with SetGate), which keeps it shown unless the health is full.
 --   FrogLib.Idle.CanGate()                 -> whether the client can read a secret health this way
@@ -34,7 +36,7 @@
 --       health; at full it fades out smoothly). f.frame can be set or changed at any time.
 -- Watchers and faders keep their methods in this part's table, so a newer copy's apply to them.
 
-local Idle = FrogLib:Module("Idle", 1)
+local Idle = FrogLib:Module("Idle", 2) -- 2: opts.ignorePower
 if not Idle then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -93,6 +95,10 @@ local function Evaluate(w, o)
         end
     elseif h < hm then
         return false, "health isn't full"
+    end
+    if o.ignorePower then
+        if secret then return true, "health hidden by the game: faded only at full health", true end
+        return true
     end
     local kind, token = UnitPowerType(unit)
     kind, token = Safe(kind), Safe(token)

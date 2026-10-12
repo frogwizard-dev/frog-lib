@@ -12,15 +12,20 @@
 --       so nothing stretches but its straight edges. It sits 2 texels out from the bar, its inner
 --       line over the fill's edge. f:SetShown(on).
 -- Pixel sizes change with the frame's scale: place them again when it changes.
---   FrogLib.Borders.Show(parts, style, o): one of a bar's three borders shown, the others hidden.
---       parts = { edges =, stone =, forever = } (any may be missing); style "pixel", "classic" or
---       "forever"; o.size (edges, screen pixels; 0 hides them), o.color (edges), o.stoneColor,
---       o.thickness (Forever).
+--   local c = FrogLib.Borders.Carved(bar, layer, sublevel)
+--       Classic's action bar frame (the carved stone round each button well of the old bar, from
+--       Blizzard's own UI-MainMenuBar-Dwarf): 4 texels of stone with the riveted joints in its
+--       corners, nine-sliced at a whole number of screen pixels per texel (c:Place(thickness),
+--       1 to 3). It sits 4 texels out from the bar. c:SetShown(on).
+--   FrogLib.Borders.Show(parts, style, o): one of a bar's borders shown, the others hidden.
+--       parts = { edges =, stone =, forever =, carved = } (any may be missing); style "pixel",
+--       "classic", "forever" or "carved"; o.size (edges, screen pixels; 0 hides them), o.color
+--       (edges), o.stoneColor, o.thickness (Forever and carved).
 --   FrogLib.Borders.Reach(style, o, px) -> how far that border reaches outside the bar, in screen
 --       pixels (px: one screen pixel in the bar's units, for the stone's 3 units).
 
 local ADDON = ...
-local Borders = FrogLib:Module("Borders", 3) -- 3: Show, Reach
+local Borders = FrogLib:Module("Borders", 4) -- 3: Show, Reach; 4: Carved
 if not Borders then return end
 
 local Pixel, NoSnap = FrogLib.Pixel, FrogLib.NoSnap
@@ -159,7 +164,77 @@ function Forever:Textures()
 end
 
 ------------------------------------------------------------------------------
--- One of the three
+-- Classic's carved bar frame
+------------------------------------------------------------------------------
+
+Borders.CARVED_FILE = "Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf"
+-- One button well of the old bar, its frame included (texels of the 256 x 256 file): the frame is
+-- 4 texels on each side, the corners 7 (their rivets).
+local WELL_L, WELL_R, WELL_T, WELL_B = 41, 88, 149, 192
+local CARVED_EDGE, CARVED_CORNER = 4, 7
+
+Borders.CarvedMethods = Borders.CarvedMethods or {}
+local Carved = Borders.CarvedMethods
+Borders.CarvedMeta = Borders.CarvedMeta or { __index = Carved }
+
+function Borders.Carved(bar, layer, sublevel)
+    local c = { bar = bar, parts = {} }
+    for _, key in ipairs(FRAME_KEYS) do
+        local t = bar:CreateTexture(nil, layer or "OVERLAY", nil, sublevel or 5)
+        t:SetTexture(Borders.CARVED_FILE, nil, nil, "NEAREST")
+        NoSnap(t)
+        c.parts[key] = t
+    end
+    return setmetatable(c, Borders.CarvedMeta)
+end
+
+local function Coords(t, l, r, top, b)
+    t:SetTexCoord(l / 256, r / 256, top / 256, b / 256)
+end
+
+function Carved:Place(thickness)
+    local p, bar = self.parts, self.bar
+    local px = (thickness or 1) * Pixel(bar)
+    local m, e = CARVED_CORNER * px, CARVED_EDGE * px
+    local L, R, T, B, C, E = WELL_L, WELL_R, WELL_T, WELL_B, CARVED_CORNER, CARVED_EDGE
+    Coords(p.tl, L, L + C, T, T + C)
+    Coords(p.tr, R - C, R, T, T + C)
+    Coords(p.bl, L, L + C, B - C, B)
+    Coords(p.br, R - C, R, B - C, B)
+    Coords(p.t, L + C, R - C, T, T + E)
+    Coords(p.b, L + C, R - C, B - E, B)
+    Coords(p.l, L, L + E, T + C, B - C)
+    Coords(p.r, R - E, R, T + C, B - C)
+    for _, t in pairs(p) do t:ClearAllPoints() end
+    p.tl:SetPoint("TOPLEFT", bar, "TOPLEFT", -e, e)
+    p.tr:SetPoint("TOPRIGHT", bar, "TOPRIGHT", e, e)
+    p.bl:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -e, -e)
+    p.br:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", e, -e)
+    for _, key in ipairs({ "tl", "tr", "bl", "br" }) do p[key]:SetSize(m, m) end
+    p.t:SetPoint("TOPLEFT", p.tl, "TOPRIGHT")
+    p.t:SetPoint("TOPRIGHT", p.tr, "TOPLEFT")
+    p.t:SetHeight(e)
+    p.b:SetPoint("BOTTOMLEFT", p.bl, "BOTTOMRIGHT")
+    p.b:SetPoint("BOTTOMRIGHT", p.br, "BOTTOMLEFT")
+    p.b:SetHeight(e)
+    p.l:SetPoint("TOPLEFT", p.tl, "BOTTOMLEFT")
+    p.l:SetPoint("BOTTOMLEFT", p.bl, "TOPLEFT")
+    p.l:SetWidth(e)
+    p.r:SetPoint("TOPRIGHT", p.tr, "BOTTOMRIGHT")
+    p.r:SetPoint("BOTTOMRIGHT", p.br, "TOPRIGHT")
+    p.r:SetWidth(e)
+end
+
+function Carved:SetShown(shown)
+    for _, t in pairs(self.parts) do t:SetShown(shown and true or false) end
+end
+
+function Carved:Textures()
+    return self.parts
+end
+
+------------------------------------------------------------------------------
+-- One of them
 ------------------------------------------------------------------------------
 
 function Borders.Show(parts, style, o)
@@ -177,11 +252,16 @@ function Borders.Show(parts, style, o)
         if style == "forever" then parts.forever:Place(o.thickness) end
         parts.forever:SetShown(style == "forever")
     end
+    if parts.carved then
+        if style == "carved" then parts.carved:Place(o.thickness) end
+        parts.carved:SetShown(style == "carved")
+    end
 end
 
 function Borders.Reach(style, o, px)
     o = o or {}
     if style == "forever" then return FRAME_OUT * (o.thickness or 1) end
+    if style == "carved" then return CARVED_EDGE * (o.thickness or 1) end
     if style == "classic" then return math.ceil(3 / px) end
     return math.max(0, o.size or 1)
 end

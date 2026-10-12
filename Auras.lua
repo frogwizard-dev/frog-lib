@@ -20,8 +20,11 @@
 --       or centred on it with o.timerOnIcon). o.rounded, o.shadow (text shadows), o.seconds (the
 --       timer's format), o.style(d) (sizes and fonts: run before the regions are handed over).
 --       Clicks off, so the icons never eat clicks meant for the world; tooltips stay.
+--       A harmful aura's border takes its dispel type's colour (magic blue, curse purple, disease
+--       brown, poison green; the game's own colours), worked out by the engine, so it shows where
+--       addons can't read the type; with no type, o.border shows. o.dispel = false: never.
 
-local Auras = FrogLib:Module("Auras", 1)
+local Auras = FrogLib:Module("Auras", 2) -- 2: debuff borders in their dispel type's colour
 if not Auras then return end
 
 local MASK = "UI-HUD-CoolDownManager-Mask"
@@ -96,6 +99,7 @@ function Auras.Shape(icon, border, button, cooldown, rounded)
     outer:SetAllPoints(button)
     pcall(border.AddMaskTexture, border, outer)
     if cooldown and cooldown.SetSwipeTexture then pcall(cooldown.SetSwipeTexture, cooldown, SWIPE) end
+    return outer -- the border's rounded mask, for anything else drawn in the border's place
 end
 
 local BLACK = { 0, 0, 0 }
@@ -109,7 +113,22 @@ function Auras.InitButton(button, o)
     d.icon = button:CreateTexture(nil, "ARTWORK")
     d.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     d.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
-    Auras.Shape(d.icon, d.border, button, d.cooldown, o.rounded)
+    local mask = Auras.Shape(d.icon, d.border, button, d.cooldown, o.rounded)
+    -- Over the border, the dispel type's colour: the engine colours it (Blizzard's debuff colours)
+    -- and shows it only for harmful auras that have a type.
+    local style = Enum.CustomAuraButtonDispelTypeTextureStyle
+    if o.dispel ~= false and button.AddDispelTypeTexture and style and style.PreserveAsset then
+        local t = button:CreateTexture(nil, "BACKGROUND", nil, 1)
+        t:SetAllPoints()
+        t:SetTexture("Interface\\Buttons\\WHITE8X8")
+        if mask then pcall(t.AddMaskTexture, t, mask) end
+        if pcall(button.AddDispelTypeTexture, button, t, { style = style.PreserveAsset,
+            showWhenHarmful = true, showWhenHelpful = false, showWithoutDispelType = false }) then
+            d.dispel = t
+        else
+            t:Hide()
+        end
+    end
     d.cooldown:SetAllPoints(d.icon)
     d.cooldown:SetDrawEdge(false)
     d.cooldown:SetReverse(true)

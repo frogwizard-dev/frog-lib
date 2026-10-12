@@ -11,6 +11,8 @@
 --       keeping their place and size, and go back when it's shown. Each call replaces that
 --       owner's list (so it can change from call to call), and the frame keeps out every child
 --       any of its owners lists. A child that's hidden itself (Set on it too) just stays hidden.
+--       opts.fadeOnly: only the opacity layer, never re-parented, for a frame whose own code asks
+--       its parent for things (the XP bar's container asks its manager to lay out again).
 --   FrogLib.Hider.IsHidden(frame) -> whether any owner is hiding it
 --   FrogLib.Hider.Parent()        -> the hidden frame they go under (FrogwizardHiddenParent)
 --   FrogLib.Hider.Refresh()       -> hide them all again now (it does so itself; see below)
@@ -33,7 +35,7 @@
 -- Its state lives in this part's table and its hooks call through it, so a newer copy takes over
 -- the frames an older one hid.
 
-local Hider = FrogLib:Module("Hider", 1)
+local Hider = FrogLib:Module("Hider", 2) -- 2: opts.fadeOnly
 if not Hider then return end
 
 -- [frame] = { frame, owners = { [owner] = keep list }, kept = { [child] = its own scale },
@@ -211,7 +213,7 @@ local function KeepOut(s, keep)
 end
 
 local function Apply(s, hidden)
-    if On(s) then
+    if On(s) and not s.fadeOnly then
         local keep = KeepSet(s)
         Take(s, hidden)
         Settle(s, keep)
@@ -261,6 +263,7 @@ function Hider.Set(owner, frame, hidden, opts)
             for i, k in ipairs(opts.keep) do keep[i] = k end
         end
         s.owners[owner] = keep
+        s.fadeOnly = opts and opts.fadeOnly or nil
     else
         s.owners[owner] = nil
     end

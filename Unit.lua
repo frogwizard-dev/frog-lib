@@ -12,6 +12,11 @@
 --   FrogLib.Unit.ClassText(unit, colored) -> a player's class ("Paladin", in its colour if
 --       `colored`), anything else's creature type ("Beast"); "" for "Not specified" or when it
 --       can't be told whether it's a player
+--   Your pet (a hunter's): FrogLib.Unit.PetHappiness() -> happiness (1 unhappy, 2 content,
+--       3 happy), damage percentage, loyalty rate, or nil (no hunter's pet); PetLoyalty() -> its
+--       loyalty's name; PetTraining() -> total points, used; PetFood() -> a list of the foods it
+--       eats. Forever's C_PetInfo, or the old globals. FrogLib.Unit.HAPPINESS_ATLAS[happiness]:
+--       the game's face for it.
 --   FrogLib.Unit.WORDS: the template words for a unit: name, level, class, value, max, percent
 --       (its health), power, powermax, powerpercent, powertype
 --   FrogLib.Unit.UsesPower(template) -> whether a template shows any of the power words
@@ -23,7 +28,7 @@
 --       (no unit), its class word coloured from fake.classFile ("PALADIN"); with `power`, a
 --       sample's value, max and percent are taken from its power words if it has them.
 
-local Unit = FrogLib:Module("Unit", 2) -- 2: IsPlayer; secret checks first
+local Unit = FrogLib:Module("Unit", 3) -- 2: IsPlayer; secret checks first; 3: the pet's happiness and care
 if not Unit then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -93,6 +98,58 @@ function Unit.IsPlayer(unit)
     local a, b = UnitGUID(unit), UnitGUID("player")
     if issecret(a) or issecret(b) or a == nil then return nil end
     return a == b
+end
+
+-- Forever has them in C_PetInfo (the old game had globals); either, whichever this client has.
+local function PetCall(name, ...)
+    local fn = (C_PetInfo and C_PetInfo[name]) or _G[name]
+    if not fn then return nil end
+    local ok, a, b, c = pcall(fn, ...)
+    if not ok then return nil end
+    return a, b, c
+end
+
+Unit.HAPPINESS_ATLAS = { "UI-PetMad", "UI-PetNeutral", "UI-PetHappiness" }
+
+-- Only for a hunter's pet: a warlock's has no happiness (and the game says "happy" for it).
+local function HunterPet()
+    if not HasPetUI then return UnitExists("pet") end
+    local has, isHunterPet = HasPetUI()
+    return has and isHunterPet and true or false
+end
+
+function Unit.PetHappiness()
+    if not HunterPet() then return nil end
+    local happiness, damage, loyalty = PetCall("GetPetHappiness")
+    happiness = Safe(happiness)
+    if not Unit.HAPPINESS_ATLAS[happiness] then return nil end
+    return happiness, Safe(damage), Safe(loyalty)
+end
+
+function Unit.PetLoyalty()
+    if not HunterPet() then return nil end
+    local name = Safe((PetCall("GetPetLoyalty")))
+    if type(name) ~= "string" or name == "" then return nil end
+    return name
+end
+
+function Unit.PetTraining()
+    if not HunterPet() then return nil end
+    local total, used = PetCall("GetPetTrainingPoints")
+    total, used = Safe(total), Safe(used)
+    if type(total) ~= "number" or total <= 0 then return nil end
+    return total, used or 0
+end
+
+function Unit.PetFood()
+    if not HunterPet() then return nil end
+    local a, b, c = PetCall("GetPetFoodTypes")
+    local list = type(a) == "table" and a or { a, b, c } -- C_PetInfo's is a table; the old one, a list
+    local out = {}
+    for _, food in ipairs(list) do
+        if type(food) == "string" and food ~= "" then out[#out + 1] = food end
+    end
+    return #out > 0 and out or nil
 end
 
 function Unit.PowerTypeName(unit, kind)
