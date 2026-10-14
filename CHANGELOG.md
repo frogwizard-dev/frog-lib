@@ -1,5 +1,9 @@
 # FrogLib
 
+## 1.4.0
+
+- Plates: the machinery for restyling enemy nameplates, out of FrogPlates so XIVPlates can share it. It takes the plates over (Blizzard's made see-through, its cast bar and auras kept), follows casts you can't interrupt and the time left on them, works out execute range, quest targets, threat colours and text, and tells the addon's skin when to build, lay out and fill in each plate. One addon drives the plates at a time.
+
 ## 1.3.0
 
 - Debuff borders in their dispel type's colour on every add-on's aura rows (FrogFrames, FrogTarget, XIVTarget, XIVPlayer, Personal Resource Tweaks): magic blue, curse purple, disease brown, poison green, the game's own colours, worked out by the game so they show even when the type is hidden from add-ons. Debuffs with no type keep the row's own border colour.

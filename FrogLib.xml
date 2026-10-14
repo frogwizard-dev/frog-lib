@@ -15,6 +15,7 @@
 	<Script file="Color.lua"/>
 	<Script file="Unit.lua"/>
 	<Script file="Icons.lua"/>
+	<Script file="Plates.lua"/>
 	<Script file="Secure.lua"/>
 	<Script file="Gauge.lua"/>
 	<Script file="Grid.lua"/>
