@@ -1,5 +1,9 @@
 # FrogLib
 
+## 1.5.0
+
+- Options > AddOns with the gamepad interface: the Frog Wizard pages no longer upset the game's gamepad navigation. The list of add-ons on the Frog Wizard page is made at login rather than each time the page opens, the options window stays open in gamepad mode when you open an add-on's settings (they show over it), and a button only does anything while its page is the one showing, so a gamepad cursor left behind on the page before can't open the wrong add-on.
+
 ## 1.4.0
 
 - Plates: the machinery for restyling enemy nameplates, out of FrogPlates so XIVPlates can share it. It takes the plates over (Blizzard's made see-through, its cast bar and auras kept), follows casts you can't interrupt and the time left on them, works out execute range, quest targets, threat colours and text, and tells the addon's skin when to build, lay out and fill in each plate. One addon drives the plates at a time.
