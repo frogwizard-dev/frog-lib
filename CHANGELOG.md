@@ -1,5 +1,10 @@
 # FrogLib
 
+## 1.6.0
+
+- Arrow: a waypoint arrow that turns to point at a place (green ahead, through yellow to red behind), with how far it is and what's there under it, dragged where you like. FrogGuide's, now shared, and FrogRoute's.
+- Lines: lines drawn over the world map (they pan and zoom with it) and the minimap (around you, clipped to its round or square edge, turning with it), for routes; and the minimap's sums for pins.
+
 ## 1.5.0
 
 - Options > AddOns with the gamepad interface: the Frog Wizard pages no longer upset the game's gamepad navigation. The list of add-ons on the Frog Wizard page is made at login rather than each time the page opens, the options window stays open in gamepad mode when you open an add-on's settings (they show over it), and a button only does anything while its page is the one showing, so a gamepad cursor left behind on the page before can't open the wrong add-on.

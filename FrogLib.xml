@@ -25,5 +25,7 @@
 	<Script file="Mover.lua"/>
 	<Script file="StatList.lua"/>
 	<Script file="CVar.lua"/>
+	<Script file="Arrow.lua"/>
+	<Script file="Lines.lua"/>
 	<Script file="UI.lua"/>
 </Ui>
