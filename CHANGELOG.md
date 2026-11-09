@@ -1,5 +1,10 @@
 # FrogLib
 
+## 1.7.0
+
+- Tank: a one-hand weapon is compared with your main hand unless your off hand holds a weapon too (it was compared with a shield or off-hand item when that had the lower item level).
+- Tank: the combat maths for melee and tanks, out of StatSheet so other add-ons can share it: effective health, armor against an enemy's level, where an enemy's swings go (misses, dodges, parries, blocks, crits, crushing blows), the defense that stops a boss critting you, the hit you need, your threat multiplier, and what an item would change if it replaced what you wear (which slot, a two-hander for both hands, the weaker ring or trinket, an off-hand weapon at half). Each sum can take made-up numbers, to ask "what if".
+
 ## 1.6.0
 
 - Arrow: a waypoint arrow that turns to point at a place (green ahead, through yellow to red behind), with how far it is and what's there under it, dragged where you like. FrogGuide's, now shared, and FrogRoute's.

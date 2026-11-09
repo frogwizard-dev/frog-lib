@@ -5,6 +5,7 @@
 	<Script file="Media.lua"/>
 	<Script file="Borders.lua"/>
 	<Script file="Threat.lua"/>
+	<Script file="Tank.lua"/>
 	<Script file="Hider.lua"/>
 	<Script file="Curve.lua"/>
 	<Script file="Idle.lua"/>
