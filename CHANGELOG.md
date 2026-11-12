@@ -1,5 +1,9 @@
 # FrogLib
 
+## 1.7.1
+
+- Secure: right-clicking a unit frame with the gamepad UI on opens its menu beside the frame (it failed with an error, as the hidden menu button had no place on screen).
+
 ## 1.7.0
 
 - Tank: a one-hand weapon is compared with your main hand unless your off hand holds a weapon too (it was compared with a shield or off-hand item when that had the lower item level).

@@ -13,12 +13,15 @@
 --       existing menu button to use (two buttons over one bar can share one), otherwise one is
 --       made (name .. "Menu"); tooltip = true: the unit's tooltip while the mouse is over it.
 
-local Secure = FrogLib:Module("Secure", 1)
+local Secure = FrogLib:Module("Secure", 2)
 if not Secure then return end
 
 function Secure.MenuButton(owner, name)
     local menu = CreateFrame("Button", name, owner, "SecureActionButtonTemplate")
-    menu:SetSize(1, 1)
+    -- Over the whole unit button (it takes no mouse, so clicks still reach the owner). With the
+    -- gamepad UI on, Blizzard opens a context menu beside its owner rather than at the cursor, and
+    -- a menu button with no place on screen made that fail (FrameUtil.GetScreenQuadrant).
+    menu:SetAllPoints(owner)
     menu:EnableMouse(false)
     menu:RegisterForClicks("AnyUp")
     for i = 1, 5 do menu:SetAttribute("type" .. i, "togglemenu") end
