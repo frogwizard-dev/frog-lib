@@ -1,5 +1,9 @@
 # FrogLib
 
+## 1.8.0
+
+- Tank: `ReplacedEach` gives every way an item could go in. A ring or trinket, with both worn, is compared with each one.
+
 ## 1.7.1
 
 - Secure: right-clicking a unit frame with the gamepad UI on opens its menu beside the frame (it failed with an error, as the hidden menu button had no place on screen).

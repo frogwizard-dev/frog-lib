@@ -29,11 +29,13 @@
 --                                      crit, from the tooltip when GetItemStats lacks them
 --   Tank.TargetSlots(equipLoc)      -> slot it goes in, { slots it empties }
 --   Tank.Replaced(link)             -> slot, { [slot] = link } it replaces, { names }
+--   Tank.ReplacedEach(link)         -> { { slot =, old =, names = } }: both rings or trinkets when
+--                                      both are worn, else what Tank.Replaced picks
 --   Tank.Diff(newLink, old, slot, full) -> d (new minus old for each stat; d.dps is the weapon DPS
 --                                      change, main hand whole and off hand at half), main-hand DPS
 --                                      change, off-hand DPS change
 
-local Tank = FrogLib:Module("Tank", 1)
+local Tank = FrogLib:Module("Tank", 2)
 if not Tank then return end
 
 local issecret = FrogLib.issecret
@@ -449,6 +451,25 @@ function Tank.Replaced(link)
         end
     end
     return slot, old, names
+end
+
+-- Every way it could go in: for a ring or trinket with both slots filled, one entry for each
+-- (slot order); otherwise just what Tank.Replaced picks. Each entry is { slot =, old =, names = }.
+function Tank.ReplacedEach(link)
+    local equipLoc = select(4, C_Item.GetItemInfoInstant(link))
+    local slots = SLOTS[equipLoc]
+    if slots and (equipLoc == "INVTYPE_FINGER" or equipLoc == "INVTYPE_TRINKET")
+        and Equipped(slots[1]) and Equipped(slots[2]) then
+        local out = {}
+        for _, s in ipairs(slots) do
+            local l = Equipped(s)
+            out[#out + 1] = { slot = s, old = { [s] = l }, names = { C_Item.GetItemInfo(l) or l:match("%[(.-)%]") } }
+        end
+        return out
+    end
+    local slot, old, names = Tank.Replaced(link)
+    if not slot then return {} end
+    return { { slot = slot, old = old, names = names } }
 end
 
 -- New minus old for every stat. `old` is one link or { [slot] = link } for everything it replaces.
