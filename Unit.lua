@@ -1,32 +1,6 @@
 -- FrogLib Unit: what the unit frames and bars print about a unit, and their text templates' words
--- (FrogLib.Text) for it. Anything here may come back secret: it's only handed on (to a widget,
--- or SetFormattedText through the templates), never tested.
---   FrogLib.Unit.Name(unit)      -> the name as the game's own frames show it (on Forever with the
---       surname, GetUnitName's second argument; UnitName gives only the first name), or nil
---   FrogLib.Unit.Level(unit, opts) -> the level as text ("60"), "??" when it's too high to show;
---       opts.color: in the colour for how hard it is for you (grey, green, yellow, orange, red)
---       and a skull for "too high", as the game's target frame; your own level stays plain.
---   FrogLib.Unit.HealthPercent(unit), FrogLib.Unit.PowerPercent(unit, kind) -> 0 to 100
---       (kind: which power, by number; the unit's own by default)
---   FrogLib.Unit.PowerTypeName(unit, kind) -> "Mana", "Rage", "Energy"... ("" when it can't tell)
---   FrogLib.Unit.ClassText(unit, colored) -> a player's class ("Paladin", in its colour if
---       `colored`), anything else's creature type ("Beast"); "" for "Not specified" or when it
---       can't be told whether it's a player
---   Your pet (a hunter's): FrogLib.Unit.PetHappiness() -> happiness (1 unhappy, 2 content,
---       3 happy), damage percentage, loyalty rate, or nil (no hunter's pet); PetLoyalty() -> its
---       loyalty's name; PetTraining() -> total points, used; PetFood() -> a list of the foods it
---       eats. Forever's C_PetInfo, or the old globals. FrogLib.Unit.HAPPINESS_ATLAS[happiness]:
---       the game's face for it.
---   FrogLib.Unit.WORDS: the template words for a unit: name, level, class, value, max, percent
---       (its health), power, powermax, powerpercent, powertype
---   FrogLib.Unit.UsesPower(template) -> whether a template shows any of the power words
---   FrogLib.Unit.SetText(fs, template, unit, opts) -> whether the text went in: the template
---       filled in for the unit (FrogLib.Text.Set: empty hides fs). opts (all optional):
---       power: value, max and percent are the unit's power rather than its health (a power
---       bar's text); kind: which power (by number); levelColor: the level as Level's opts.color;
---       classColor: the class word in the class's colour; fake: the words' values for a sample
---       (no unit), its class word coloured from fake.classFile ("PALADIN"); with `power`, a
---       sample's value, max and percent are taken from its power words if it has them.
+-- (FrogLib.Text) for it. Anything here may come back secret: it's only handed on (to a widget, or
+-- SetFormattedText through the templates), never tested.
 
 local Unit = FrogLib:Module("Unit", 3) -- 2: IsPlayer; secret checks first; 3: the pet's happiness and care
 if not Unit then return end
@@ -38,6 +12,8 @@ Unit.SKULL = "|TInterface\\TargetingFrame\\UI-TargetingFrame-Skull:0|t"
 local NOT_SPECIFIED = 10 -- creature type id
 local NONE, COLORED = {}, { color = true }
 
+-- The name as the game's own frames show it (on Forever with the surname: GetUnitName's second
+-- argument; UnitName gives only the first name), or nil.
 function Unit.Name(unit)
     if GetUnitName then
         local ok, name = pcall(GetUnitName, unit, true)
@@ -46,6 +22,8 @@ function Unit.Name(unit)
     return (UnitName(unit))
 end
 
+-- The level as text ("60"), "??" when it's too high to show. opts.color: in the colour for how hard
+-- it is for you, a skull for too high, as the game's target frame (your own level stays plain).
 function Unit.Level(unit, opts)
     local level = UnitLevel(unit)
     if issecret(level) then return level end
@@ -53,8 +31,8 @@ function Unit.Level(unit, opts)
     if colored and UnitIsUnit and Safe(UnitIsUnit(unit, "player")) then colored = false end
     if type(level) ~= "number" or level <= 0 then return colored and Unit.SKULL or "??" end
     if colored and GetCreatureDifficultyColor then
-        local c = GetCreatureDifficultyColor(level)
-        if c then return Color.Wrap(tostring(level), c.r, c.g, c.b) end
+        local color = GetCreatureDifficultyColor(level)
+        if color then return Color.Wrap(tostring(level), color.r, color.g, color.b) end
     end
     return tostring(level)
 end
@@ -71,44 +49,44 @@ local function Scale()
     return CurveConstants and CurveConstants.ScaleTo100
 end
 
+-- 0 to 100.
 function Unit.HealthPercent(unit)
     if UnitHealthPercent and Scale() then
-        local ok, p = pcall(UnitHealthPercent, unit, true, Scale())
-        if ok and (issecret(p) or p ~= nil) then return p end
+        local ok, percent = pcall(UnitHealthPercent, unit, true, Scale())
+        if ok and (issecret(percent) or percent ~= nil) then return percent end
     end
     return Ratio(UnitHealth(unit), UnitHealthMax(unit))
 end
 
--- The third argument ("unmodified") is false, as UnitPower's own default: the power as it's
--- shown (rage out of 100), the same as the value and max words.
+-- 0 to 100 (kind: which power, by number; the unit's own by default). "Unmodified" is false, as
+-- UnitPower's own default: the power as it's shown (rage out of 100), like the value and max words.
 function Unit.PowerPercent(unit, kind)
     if UnitPowerPercent and Scale() then
-        local ok, p = pcall(UnitPowerPercent, unit, kind, false, Scale())
-        if ok and (issecret(p) or p ~= nil) then return p end
+        local ok, percent = pcall(UnitPowerPercent, unit, kind, false, Scale())
+        if ok and (issecret(percent) or percent ~= nil) then return percent end
     end
     return Ratio(UnitPower(unit, kind), UnitPowerMax(unit, kind))
 end
 
--- The power's name as the game prints it: the global string named by its token, or the token
--- tidied up.
 -- Whether unit is you: true, false, or nil when the game hides it (and your GUIDs too).
 function Unit.IsPlayer(unit)
     local same = UnitIsUnit(unit, "player")
     if not issecret(same) then return same and true or false end
-    local a, b = UnitGUID(unit), UnitGUID("player")
-    if issecret(a) or issecret(b) or a == nil then return nil end
-    return a == b
+    local unitGUID, playerGUID = UnitGUID(unit), UnitGUID("player")
+    if issecret(unitGUID) or issecret(playerGUID) or unitGUID == nil then return nil end
+    return unitGUID == playerGUID
 end
 
 -- Forever has them in C_PetInfo (the old game had globals); either, whichever this client has.
 local function PetCall(name, ...)
-    local fn = (C_PetInfo and C_PetInfo[name]) or _G[name]
-    if not fn then return nil end
-    local ok, a, b, c = pcall(fn, ...)
+    local Call = (C_PetInfo and C_PetInfo[name]) or _G[name]
+    if not Call then return nil end
+    local ok, first, second, third = pcall(Call, ...)
     if not ok then return nil end
-    return a, b, c
+    return first, second, third
 end
 
+-- The game's face for each happiness.
 Unit.HAPPINESS_ATLAS = { "UI-PetMad", "UI-PetNeutral", "UI-PetHappiness" }
 
 -- Only for a hunter's pet: a warlock's has no happiness (and the game says "happy" for it).
@@ -118,6 +96,7 @@ local function HunterPet()
     return has and isHunterPet and true or false
 end
 
+-- happiness (1 unhappy, 2 content, 3 happy), damage percentage, loyalty rate; nil without a hunter's pet.
 function Unit.PetHappiness()
     if not HunterPet() then return nil end
     local happiness, damage, loyalty = PetCall("GetPetHappiness")
@@ -126,6 +105,7 @@ function Unit.PetHappiness()
     return happiness, Safe(damage), Safe(loyalty)
 end
 
+-- Its loyalty's name.
 function Unit.PetLoyalty()
     if not HunterPet() then return nil end
     local name = Safe((PetCall("GetPetLoyalty")))
@@ -133,6 +113,7 @@ function Unit.PetLoyalty()
     return name
 end
 
+-- Total training points, and used.
 function Unit.PetTraining()
     if not HunterPet() then return nil end
     local total, used = PetCall("GetPetTrainingPoints")
@@ -141,17 +122,20 @@ function Unit.PetTraining()
     return total, used or 0
 end
 
+-- A list of the foods it eats.
 function Unit.PetFood()
     if not HunterPet() then return nil end
-    local a, b, c = PetCall("GetPetFoodTypes")
-    local list = type(a) == "table" and a or { a, b, c } -- C_PetInfo's is a table; the old one, a list
-    local out = {}
+    local first, second, third = PetCall("GetPetFoodTypes")
+    local list = type(first) == "table" and first or { first, second, third } -- C_PetInfo's is a table
+    local foods = {}
     for _, food in ipairs(list) do
-        if type(food) == "string" and food ~= "" then out[#out + 1] = food end
+        if type(food) == "string" and food ~= "" then foods[#foods + 1] = food end
     end
-    return #out > 0 and out or nil
+    return #foods > 0 and foods or nil
 end
 
+-- "Mana", "Rage", "Energy"... as the game prints it: the global string named by the power's token,
+-- or the token tidied up ("" when it can't tell).
 function Unit.PowerTypeName(unit, kind)
     local token
     if not issecret(kind) and kind ~= nil then
@@ -160,16 +144,17 @@ function Unit.PowerTypeName(unit, kind)
         end
     end
     if not token then
-        local _, t = UnitPowerType(unit)
-        if issecret(t) or type(t) ~= "string" then return "" end
-        token = t
+        local _, unitToken = UnitPowerType(unit)
+        if issecret(unitToken) or type(unitToken) ~= "string" then return "" end
+        token = unitToken
     end
     local text = _G[token]
     if type(text) == "string" then return text end
     return (token:sub(1, 1) .. token:sub(2):lower():gsub("_", " "))
 end
 
--- A secret class or type is shown as it is (it can't be coloured).
+-- A player's class ("Paladin", in its colour if `colored`), anything else's creature type ("Beast");
+-- "" for "Not specified" or when it can't be told. A secret one is shown as it is (uncoloured).
 function Unit.ClassText(unit, colored)
     local player = UnitIsPlayer(unit)
     if issecret(player) then return "" end
@@ -188,7 +173,7 @@ function Unit.ClassText(unit, colored)
 end
 
 ------------------------------------------------------------------------------
--- Template words
+-- Template words: percent is the unit's health
 ------------------------------------------------------------------------------
 
 Unit.WORDS = {
@@ -199,59 +184,66 @@ Unit.WORDS = {
 local POWER_WORDS = { power = true, powermax = true, powerpercent = true, powertype = true }
 local AS_POWER = { value = "power", max = "powermax", percent = "powerpercent" }
 
--- Each word's value for a unit: looked up only when a template uses it, so a missing function
--- only blanks its word.
+-- Each word's value for a unit: looked up only when a template uses it, so a missing function only
+-- blanks its word.
 local GET = {
     name = function(unit) return Unit.Name(unit) end,
-    level = function(unit, o) return Unit.Level(unit, o.levelColor and COLORED or nil) end,
-    class = function(unit, o) return Unit.ClassText(unit, o.classColor) end,
+    level = function(unit, opts) return Unit.Level(unit, opts.levelColor and COLORED or nil) end,
+    class = function(unit, opts) return Unit.ClassText(unit, opts.classColor) end,
     value = function(unit) return UnitHealth(unit) end,
     max = function(unit) return UnitHealthMax(unit) end,
     percent = function(unit) return Unit.HealthPercent(unit) end,
-    power = function(unit, o) return UnitPower(unit, o.kind) end,
-    powermax = function(unit, o) return UnitPowerMax(unit, o.kind) end,
-    powerpercent = function(unit, o) return Unit.PowerPercent(unit, o.kind) end,
-    powertype = function(unit, o) return Unit.PowerTypeName(unit, o.kind) end,
+    power = function(unit, opts) return UnitPower(unit, opts.kind) end,
+    powermax = function(unit, opts) return UnitPowerMax(unit, opts.kind) end,
+    powerpercent = function(unit, opts) return Unit.PowerPercent(unit, opts.kind) end,
+    powertype = function(unit, opts) return Unit.PowerTypeName(unit, opts.kind) end,
 }
 
+-- Whether a template shows any of the power words.
 function Unit.UsesPower(template)
     if type(template) ~= "string" then return false end
     local uses = Text.Compile(template, Unit.WORDS).uses
-    for w in pairs(POWER_WORDS) do
-        if uses[w] then return true end
+    for word in pairs(POWER_WORDS) do
+        if uses[word] then return true end
     end
     return false
 end
 
-local vals = {}
+local values = {}
 
-local function Fake(fake, word, src, opts)
-    local v = fake[src]
-    if v == nil then v = fake[word] end
-    if type(v) == "table" then return nil end
-    if src == "class" and type(v) == "string" and opts.classColor then v = Color.ClassText(v, fake.classFile) end
-    return v
+-- A sample's value for a word: its class coloured from fake.classFile ("PALADIN").
+local function Fake(fake, word, source, opts)
+    local value = fake[source]
+    if value == nil then value = fake[word] end
+    if type(value) == "table" then return nil end
+    if source == "class" and type(value) == "string" and opts.classColor then
+        value = Color.ClassText(value, fake.classFile)
+    end
+    return value
 end
 
-function Unit.SetText(fs, template, unit, opts)
+-- The template filled in for the unit (an empty one hides the font string), and whether it went in.
+-- opts.power: value, max and percent are the unit's power (a power bar's text); opts.kind: which power.
+function Unit.SetText(fontString, template, unit, opts)
     opts = opts or NONE
     if type(template) ~= "string" or not template:find("%S") then
-        fs:Hide()
+        fontString:Hide()
         return false
     end
-    local c = Text.Compile(template, Unit.WORDS)
-    for w in pairs(c.uses) do
-        local src = (opts.power and AS_POWER[w]) or w
-        local v
+    local compiled = Text.Compile(template, Unit.WORDS)
+    for word in pairs(compiled.uses) do
+        local source = (opts.power and AS_POWER[word]) or word
+        local value
+        -- opts.fake: the words' values for a sample (no unit); with opts.power, its power words if it has them.
         if opts.fake then
-            v = Fake(opts.fake, w, src, opts)
-        elseif unit and GET[src] then
-            local ok, got = pcall(GET[src], unit, opts)
-            if ok then v = got end
+            value = Fake(opts.fake, word, source, opts)
+        elseif unit and GET[source] then
+            local ok, got = pcall(GET[source], unit, opts)
+            if ok then value = got end
         end
-        vals[w] = v
+        values[word] = value
     end
-    local ok = Text.Set(fs, template, vals, Unit.WORDS)
-    for w in pairs(vals) do vals[w] = nil end
+    local ok = Text.Set(fontString, template, values, Unit.WORDS)
+    for word in pairs(values) do values[word] = nil end
     return ok
 end

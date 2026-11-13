@@ -1,28 +1,7 @@
--- FrogLib Auras: the pieces every addon's aura rows are made of (FrogTarget, XIVTarget,
--- FrogFrames, XIVPlayer, Personal Resource Tweaks). Each row is one of 12.1's AuraContainers:
--- the engine picks and draws the auras, so it keeps working where addons can't read aura data.
--- What's been learnt: position a container before setting it up (moving it means building it
--- again), never anchor anything to it, size the buttons yourself (the engine makes them 0x0),
--- and set a button's fonts before handing its regions over (the engine writes text at once).
---
---   FrogLib.Auras.NewContainer(parent) -> c, or nil when the client has none. 1x1, unplaced.
---   FrogLib.Auras.Flow(c, point, across, down): its anchor corner ("TOPLEFT"...), and which way
---       it grows: across "RIGHT" / "LEFT", down "DOWN" / "UP".
---   FrogLib.Auras.SetLineSize(c, width): how long a line gets before it wraps.
---   FrogLib.Auras.Release(c): unbound from its unit and hidden, to be built again.
---   FrogLib.Auras.Call(c, newName, oldName, ...): a setter under its new or old name (renamed
---       mid-12.1: SetAuraLayout* -> SetFlowLayout*).
---   FrogLib.Auras.Formatter(seconds) -> the timer text: "12", "3m", "1h" ("12s" with seconds).
---   FrogLib.Auras.Shape(icon, border, button, cooldown, rounded): the icon inside its border,
---       1px square, or 2px with the action bars' rounded corners (cooldown sweep following).
---   FrogLib.Auras.InitButton(button, o) -> d: an engine-made button dressed: d.border (o.border
---       = { r, g, b }), d.icon, d.cooldown, d.stack (bottom right), d.duration (under the icon,
---       or centred on it with o.timerOnIcon). o.rounded, o.shadow (text shadows), o.seconds (the
---       timer's format), o.style(d) (sizes and fonts: run before the regions are handed over).
---       Clicks off, so the icons never eat clicks meant for the world; tooltips stay.
---       A harmful aura's border takes its dispel type's colour (magic blue, curse purple, disease
---       brown, poison green; the game's own colours), worked out by the engine, so it shows where
---       addons can't read the type; with no type, o.border shows. o.dispel = false: never.
+-- FrogLib Auras: the pieces every addon's aura rows are made of. Each row is one of 12.1's
+-- AuraContainers, the engine picking and drawing the auras where addons can't read them. Learnt:
+-- place a container before setting it up (moving it means building it again), anchor nothing to it,
+-- size the buttons (the engine makes them 0x0), and set fonts before handing regions over.
 
 local Auras = FrogLib:Module("Auras", 2) -- 2: debuff borders in their dispel type's colour
 if not Auras then return end
@@ -30,60 +9,68 @@ if not Auras then return end
 local MASK = "UI-HUD-CoolDownManager-Mask"
 local SWIPE = "Interface\\HUD\\UI-HUD-CoolDownManager-Icon-Swipe"
 
-function Auras.Call(c, newName, oldName, ...)
-    local f = c[newName] or c[oldName]
-    if f then pcall(f, c, ...) end
+-- A container's setter under its new or old name (renamed mid-12.1: SetAuraLayout* -> SetFlowLayout*).
+function Auras.Call(container, newName, oldName, ...)
+    local setter = container[newName] or container[oldName]
+    if setter then pcall(setter, container, ...) end
 end
 
+-- 1x1 and unplaced, or nil when the client has none.
 function Auras.NewContainer(parent)
     if C_AddOns and not C_AddOns.IsAddOnLoaded("Blizzard_AuraContainer") then
         pcall(C_AddOns.LoadAddOn, "Blizzard_AuraContainer")
     end
-    local ok, c = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
-    if not ok or not c then return nil end
-    c:SetSize(1, 1)
-    return c
+    local ok, container = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
+    if not ok or not container then return nil end
+    container:SetSize(1, 1)
+    return container
 end
 
-function Auras.Flow(c, point, across, down)
+-- Its anchor corner ("TOPLEFT"...), and which way it grows: across "RIGHT" or "LEFT", down "DOWN" or "UP".
+function Auras.Flow(container, point, across, down)
     local flow = AnchorUtil.FlowDirection
-    Auras.Call(c, "SetFlowLayoutAnchorPoint", "SetAuraLayoutAnchorPoint", point)
-    Auras.Call(c, "SetFlowLayoutGrowthDirection", "SetAuraLayoutGrowthDirection",
+    Auras.Call(container, "SetFlowLayoutAnchorPoint", "SetAuraLayoutAnchorPoint", point)
+    Auras.Call(container, "SetFlowLayoutGrowthDirection", "SetAuraLayoutGrowthDirection",
         across == "LEFT" and flow.Left or flow.Right, down == "UP" and flow.Up or flow.Down)
 end
 
-function Auras.SetLineSize(c, width)
-    Auras.Call(c, "SetFlowLayoutMaximumLineSize", "SetAuraLayoutRowWidth", width)
+-- How long a line gets before it wraps.
+function Auras.SetLineSize(container, width)
+    Auras.Call(container, "SetFlowLayoutMaximumLineSize", "SetAuraLayoutRowWidth", width)
 end
 
-function Auras.Release(c)
-    if not c then return end
-    pcall(c.SetUnit, c, "none")
-    c:Hide()
+-- Unbound from its unit and hidden, to be built again.
+function Auras.Release(container)
+    if not container then return end
+    pcall(container.SetUnit, container, "none")
+    container:Hide()
 end
 
 Auras.formatters = Auras.formatters or {}
 
+-- The timer text: "12", "3m", "1h" ("12s" with seconds).
 function Auras.Formatter(seconds)
     local key = seconds and "s" or "plain"
     local cached = Auras.formatters[key]
     if cached ~= nil then return cached or nil end
     Auras.formatters[key] = false
-    local R = Enum and Enum.NumericRuleFormatRounding
-    if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter and R then
-        local f = C_StringUtil.CreateNumericRuleFormatter()
-        if pcall(f.SetBreakpoints, f, {
-            { threshold = 0, format = seconds and "%ds" or "%d", step = 1, rounding = R.Up },
-            { threshold = 60, format = "%dm", step = 1, rounding = R.Up, components = { { div = 60 } } },
-            { threshold = 61, format = "%dm", step = 1, rounding = R.Down, components = { { div = 60 } } },
-            { threshold = 3600, format = "%dh", step = 1, rounding = R.Down, components = { { div = 3600 } } },
+    local Rounding = Enum and Enum.NumericRuleFormatRounding
+    if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter and Rounding then
+        local formatter = C_StringUtil.CreateNumericRuleFormatter()
+        if pcall(formatter.SetBreakpoints, formatter, {
+            { threshold = 0, format = seconds and "%ds" or "%d", step = 1, rounding = Rounding.Up },
+            { threshold = 60, format = "%dm", step = 1, rounding = Rounding.Up, components = { { div = 60 } } },
+            { threshold = 61, format = "%dm", step = 1, rounding = Rounding.Down, components = { { div = 60 } } },
+            { threshold = 3600, format = "%dh", step = 1, rounding = Rounding.Down, components = { { div = 3600 } } },
         }) then
-            Auras.formatters[key] = f
+            Auras.formatters[key] = formatter
         end
     end
     return Auras.formatters[key] or nil
 end
 
+-- The icon inside its border: 1px square, or 2px with the action bars' rounded corners (the
+-- cooldown sweep following). Returns the border's rounded mask, for anything drawn in its place.
 function Auras.Shape(icon, border, button, cooldown, rounded)
     local inset = rounded and 2 or 1
     icon:ClearAllPoints()
@@ -99,67 +86,71 @@ function Auras.Shape(icon, border, button, cooldown, rounded)
     outer:SetAllPoints(button)
     pcall(border.AddMaskTexture, border, outer)
     if cooldown and cooldown.SetSwipeTexture then pcall(cooldown.SetSwipeTexture, cooldown, SWIPE) end
-    return outer -- the border's rounded mask, for anything else drawn in the border's place
+    return outer
 end
 
 local BLACK = { 0, 0, 0 }
 
-function Auras.InitButton(button, o)
-    local d = { button = button }
-    local c = o.border or BLACK
-    d.border = button:CreateTexture(nil, "BACKGROUND")
-    d.border:SetAllPoints()
-    d.border:SetColorTexture(c[1], c[2], c[3], 1)
-    d.icon = button:CreateTexture(nil, "ARTWORK")
-    d.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    d.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
-    local mask = Auras.Shape(d.icon, d.border, button, d.cooldown, o.rounded)
-    -- Over the border, the dispel type's colour: the engine colours it (Blizzard's debuff colours)
-    -- and shows it only for harmful auras that have a type.
+-- An engine-made button dressed: { border, icon, cooldown, stack (bottom right), duration, dispel }.
+-- Clicks off, so the icons never eat clicks meant for the world; tooltips stay.
+function Auras.InitButton(button, opts)
+    local parts = { button = button }
+    local color = opts.border or BLACK -- { r, g, b }
+    parts.border = button:CreateTexture(nil, "BACKGROUND")
+    parts.border:SetAllPoints()
+    parts.border:SetColorTexture(color[1], color[2], color[3], 1)
+    parts.icon = button:CreateTexture(nil, "ARTWORK")
+    parts.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    parts.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+    local mask = Auras.Shape(parts.icon, parts.border, button, parts.cooldown, opts.rounded)
+    -- Over the border, a harmful aura's dispel type in the game's colours, worked out by the engine so
+    -- it shows where addons can't read the type (opts.dispel = false: never).
     local style = Enum.CustomAuraButtonDispelTypeTextureStyle
-    if o.dispel ~= false and button.AddDispelTypeTexture and style and style.PreserveAsset then
-        local t = button:CreateTexture(nil, "BACKGROUND", nil, 1)
-        t:SetAllPoints()
-        t:SetTexture("Interface\\Buttons\\WHITE8X8")
-        if mask then pcall(t.AddMaskTexture, t, mask) end
-        if pcall(button.AddDispelTypeTexture, button, t, { style = style.PreserveAsset,
+    if opts.dispel ~= false and button.AddDispelTypeTexture and style and style.PreserveAsset then
+        local dispel = button:CreateTexture(nil, "BACKGROUND", nil, 1)
+        dispel:SetAllPoints()
+        dispel:SetTexture("Interface\\Buttons\\WHITE8X8")
+        if mask then pcall(dispel.AddMaskTexture, dispel, mask) end
+        if pcall(button.AddDispelTypeTexture, button, dispel, { style = style.PreserveAsset,
             showWhenHarmful = true, showWhenHelpful = false, showWithoutDispelType = false }) then
-            d.dispel = t
+            parts.dispel = dispel
         else
-            t:Hide()
+            dispel:Hide()
         end
     end
-    d.cooldown:SetAllPoints(d.icon)
-    d.cooldown:SetDrawEdge(false)
-    d.cooldown:SetReverse(true)
-    d.cooldown:SetHideCountdownNumbers(true)
+    parts.cooldown:SetAllPoints(parts.icon)
+    parts.cooldown:SetDrawEdge(false)
+    parts.cooldown:SetReverse(true)
+    parts.cooldown:SetHideCountdownNumbers(true)
     -- The texts on a frame above the cooldown sweep.
     local carrier = CreateFrame("Frame", nil, button)
     carrier:SetAllPoints()
-    carrier:SetFrameLevel(d.cooldown:GetFrameLevel() + 1)
+    carrier:SetFrameLevel(parts.cooldown:GetFrameLevel() + 1)
     carrier:EnableMouse(false)
-    d.stack = carrier:CreateFontString(nil, "OVERLAY")
-    d.stack:SetPoint("BOTTOMRIGHT", -1, 1)
-    d.duration = carrier:CreateFontString(nil, "OVERLAY")
-    if o.timerOnIcon then
-        d.duration:SetPoint("CENTER")
+    parts.stack = carrier:CreateFontString(nil, "OVERLAY")
+    parts.stack:SetPoint("BOTTOMRIGHT", -1, 1)
+    parts.duration = carrier:CreateFontString(nil, "OVERLAY")
+    if opts.timerOnIcon then
+        parts.duration:SetPoint("CENTER")
     else
-        d.duration:SetPoint("TOP", button, "BOTTOM", 0, -1)
+        parts.duration:SetPoint("TOP", button, "BOTTOM", 0, -1)
     end
-    if o.shadow then
-        for _, fs in ipairs({ d.stack, d.duration }) do
-            fs:SetShadowOffset(1, -1)
-            fs:SetShadowColor(0, 0, 0, 1)
+    if opts.shadow then
+        for _, text in ipairs({ parts.stack, parts.duration }) do
+            text:SetShadowOffset(1, -1)
+            text:SetShadowColor(0, 0, 0, 1)
         end
     end
-    if o.style then o.style(d) end
+    -- Sizes and fonts, before the regions are handed over (the engine writes text at once).
+    if opts.style then opts.style(parts) end
 
     pcall(button.SetMouseClickEnabled, button, false)
-    button:SetIcon(d.icon)
-    button:SetDurationCooldown(d.cooldown)
-    button:SetApplicationCount(d.stack, {})
-    if not pcall(button.SetDurationText, button, d.duration, { textFormatter = Auras.Formatter(o.seconds) }) then
-        pcall(button.SetDurationText, button, d.duration, {})
+    button:SetIcon(parts.icon)
+    button:SetDurationCooldown(parts.cooldown)
+    button:SetApplicationCount(parts.stack, {})
+    -- opts.seconds: the timer's format.
+    if not pcall(button.SetDurationText, button, parts.duration, { textFormatter = Auras.Formatter(opts.seconds) }) then
+        pcall(button.SetDurationText, button, parts.duration, {})
     end
-    return d
+    return parts
 end

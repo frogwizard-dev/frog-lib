@@ -1,39 +1,7 @@
--- FrogLib Hider: hides Blizzard's frames (unit frames, cast bars, bars, the minimap...), so that
--- several of Frog Wizard's addons can hide the same frame without undoing each other.
---   FrogLib.Hider.Set(owner, frame, hidden, opts)
---       owner: who's asking, the addon's name. frame: a frame or its global name (nothing happens
---       if the game has no such frame). A frame stays hidden while any owner wants it hidden, and
---       comes back once none do.
---       opts.keep: children with a life of their own that stay on screen while the frame is
---       hidden, as global names, keys on the frame, or the frames themselves; e.g. the player
---       frame with { keep = { "PetFrame", "TotemFrame" } }, or the cast bar while Edit Mode has
---       it locked under the player frame ("PlayerCastingBarFrame"). They move out to UIParent,
---       keeping their place and size, and go back when it's shown. Each call replaces that
---       owner's list (so it can change from call to call), and the frame keeps out every child
---       any of its owners lists. A child that's hidden itself (Set on it too) just stays hidden.
---       opts.fadeOnly: only the opacity layer, never re-parented, for a frame whose own code asks
---       its parent for things (the XP bar's container asks its manager to lay out again).
---   FrogLib.Hider.IsHidden(frame) -> whether any owner is hiding it
---   FrogLib.Hider.Parent()        -> the hidden frame they go under (FrogwizardHiddenParent)
---   FrogLib.Hider.Refresh()       -> hide them all again now (it does so itself; see below)
--- Two layers, so a frame stays hidden in every situation:
---   * Opacity: at once, and kept at 0 whatever Blizzard sets it to (its fades, the managed-frame
---     layout's alpha, Edit Mode). Opacity can be set in combat, so a frame hidden mid-fight, or
---     one Blizzard moves back under its old parent mid-fight (the cast bar's layout does), stays
---     invisible until the parent layer takes it.
---   * Parent: out of combat and Edit Mode, the frame moves under a hidden frame. Its events keep
---     running, so anything it drives still updates, and it can't be seen or clicked. Unit frames
---     are protected, so nothing is re-parented in combat or in Edit Mode (where it runs
---     Blizzard's layout code under our taint): that waits for the fight's end or Edit Mode's.
--- Everything is checked again after combat, loading screens, Edit Mode and its layout changes
--- (switching between gamepad and keyboard swaps layouts), and whenever Blizzard moves a hidden
--- frame or a kept child (the cast bar locking under the player frame) somewhere else.
--- Frames come back before others hide, so a child going back to its parent (the pet frame to the
--- player frame) is there to be kept out when the parent hides.
--- The hidden frame is shared with the Hider.lua the addons used to carry each (still in older
--- releases): with one each, two addons hiding the same frame would keep taking it from each other.
--- Its state lives in this part's table and its hooks call through it, so a newer copy takes over
--- the frames an older one hid.
+-- FrogLib Hider: hides Blizzard's frames (unit frames, cast bars, bars, the minimap...) so several of
+-- Frog Wizard's addons can hide the same frame without undoing each other. The hidden frame is shared
+-- with the Hider.lua older releases carry; its state lives in this part's table and its hooks call
+-- through it, so a newer copy takes over the frames an older one hid.
 
 local Hider = FrogLib:Module("Hider", 2) -- 2: opts.fadeOnly
 if not Hider then return end
@@ -46,14 +14,15 @@ Hider.watched = Hider.watched or {} -- [child] = true once we watch where Blizza
 local frames, keptBy, watched = Hider.frames, Hider.keptBy, Hider.watched
 local NONE = {}
 
+-- The hidden frame they go under (FrogwizardHiddenParent).
 function Hider.Parent()
-    local h = Hider.hiddenParent
-    if not h then
-        h = _G.FrogwizardHiddenParent or CreateFrame("Frame", "FrogwizardHiddenParent")
-        h:Hide()
-        Hider.hiddenParent = h
+    local hidden = Hider.hiddenParent
+    if not hidden then
+        hidden = _G.FrogwizardHiddenParent or CreateFrame("Frame", "FrogwizardHiddenParent")
+        hidden:Hide()
+        Hider.hiddenParent = hidden
     end
-    return h
+    return hidden
 end
 
 local function Blocked()
@@ -66,10 +35,11 @@ local function Resolve(frame)
     return nil
 end
 
-local function On(s)
-    return s ~= nil and next(s.owners) ~= nil
+local function On(state)
+    return state ~= nil and next(state.owners) ~= nil
 end
 
+-- Whether any owner is hiding it.
 function Hider.IsHidden(frame)
     frame = Resolve(frame)
     return frame ~= nil and On(frames[frame])
@@ -99,10 +69,10 @@ end
 -- Blizzard sets its opacity back (fades, layout, Edit Mode); ours goes on after.
 function Hider.OnSetAlpha(frame)
     if fading then return end
-    local s = frames[frame]
-    if On(s) then
+    local state = frames[frame]
+    if On(state) then
         SetAlpha(frame, 0)
-        s.faded = true
+        state.faded = true
     end
 end
 
@@ -122,31 +92,33 @@ end
 local function Watch(child)
     if watched[child] then return end
     watched[child] = true
-    hooksecurefunc(child, "SetParent", function(c, parent) Hider.OnChildSetParent(c, parent) end)
+    hooksecurefunc(child, "SetParent", function(moved, parent) Hider.OnChildSetParent(moved, parent) end)
 end
 
 ------------------------------------------------------------------------------
--- The two layers
+-- Two layers, so a frame stays hidden in every situation
 ------------------------------------------------------------------------------
 
-local function Fade(s)
-    if On(s) then
-        SetAlpha(s.frame, 0)
-        s.faded = true
-    elseif s.faded then
-        SetAlpha(s.frame, 1)
-        s.faded = nil
+-- Opacity: at once and in combat too, kept at 0 whatever Blizzard sets, so a frame hidden mid-fight
+-- (or moved back under its old parent mid-fight) stays unseen until the parent layer takes it.
+local function Fade(state)
+    if On(state) then
+        SetAlpha(state.frame, 0)
+        state.faded = true
+    elseif state.faded then
+        SetAlpha(state.frame, 1)
+        state.faded = nil
     end
 end
 
 -- The children to keep out while it's hidden: every owner's list, less those hidden themselves.
-local function KeepSet(s)
+local function KeepSet(state)
     local set = {}
-    for _, keep in pairs(s.owners) do
-        for _, k in ipairs(keep) do
-            local child = Resolve(k)
-            if not child and type(k) == "string" then child = Resolve(s.frame[k]) end
-            if child and child ~= s.frame then
+    for _, keep in pairs(state.owners) do
+        for _, listed in ipairs(keep) do
+            local child = Resolve(listed)
+            if not child and type(listed) == "string" then child = Resolve(state.frame[listed]) end
+            if child and child ~= state.frame then
                 Watch(child)
                 if not On(frames[child]) then set[child] = true end
             end
@@ -155,42 +127,44 @@ local function KeepSet(s)
     return set
 end
 
-local function Take(s, hidden)
-    local frame = s.frame
+-- Parent: under the hidden frame, its events still running (anything it drives still updates),
+-- unseen and unclickable. Never in combat or Edit Mode (Blizzard's layout code under our taint).
+local function Take(state, hidden)
+    local frame = state.frame
     local parent = frame:GetParent()
     if parent == hidden then return end
-    s.home, s.homeScale = parent, nil
+    state.home, state.homeScale = parent, nil
     local from = keptBy[frame]
     if from then
         -- Kept out of another hidden frame: it goes back there, at its own scale.
-        s.homeScale = from.kept[frame]
-        if parent == UIParent then s.home = from.frame end
+        state.homeScale = from.kept[frame]
+        if parent == UIParent then state.home = from.frame end
         from.kept[frame] = nil
         keptBy[frame] = nil
     end
     frame:SetParent(hidden)
 end
 
-local function Release(s, hidden)
-    local frame = s.frame
-    if s.home and frame:GetParent() == hidden then
-        frame:SetParent(s.home)
-        if s.homeScale then frame:SetScale(s.homeScale) end
+local function Release(state, hidden)
+    local frame = state.frame
+    if state.home and frame:GetParent() == hidden then
+        frame:SetParent(state.home)
+        if state.homeScale then frame:SetScale(state.homeScale) end
     end
-    s.home, s.homeScale = nil, nil
+    state.home, state.homeScale = nil, nil
 end
 
 -- Children kept out that should go back in (no longer kept, or the frame's shown), and the size
 -- of those staying out (Edit Mode's frame size can change meanwhile).
-local function Settle(s, keep)
-    local frame = s.frame
-    for child, scale in pairs(s.kept) do
+local function Settle(state, keep)
+    local frame = state.frame
+    for child, scale in pairs(state.kept) do
         local parent = child:GetParent()
         if parent == UIParent and keep and keep[child] then
             local want = scale * frame:GetScale()
             if child:GetScale() ~= want then child:SetScale(want) end
         else
-            s.kept[child] = nil
+            state.kept[child] = nil
             keptBy[child] = nil
             if parent == UIParent then child:SetParent(frame) end
             child:SetScale(scale)
@@ -198,74 +172,82 @@ local function Settle(s, keep)
     end
 end
 
-local function KeepOut(s, keep)
-    local frame = s.frame
+-- Kept children move out to UIParent, keeping their place and size, and go back when it's shown.
+local function KeepOut(state, keep)
+    local frame = state.frame
     for child in pairs(keep) do
         if child:GetParent() == frame then
             -- Its size came partly from the frame's scale (Edit Mode's frame size).
-            local scale = s.kept[child] or child:GetScale()
-            s.kept[child] = scale
-            keptBy[child] = s
+            local scale = state.kept[child] or child:GetScale()
+            state.kept[child] = scale
+            keptBy[child] = state
             child:SetParent(UIParent)
             child:SetScale(scale * frame:GetScale())
         end
     end
 end
 
-local function Apply(s, hidden)
-    if On(s) and not s.fadeOnly then
-        local keep = KeepSet(s)
-        Take(s, hidden)
-        Settle(s, keep)
-        KeepOut(s, keep)
+local function Apply(state, hidden)
+    if On(state) and not state.fadeOnly then
+        local keep = KeepSet(state)
+        Take(state, hidden)
+        Settle(state, keep)
+        KeepOut(state, keep)
     else
-        Settle(s, nil)
-        Release(s, hidden)
+        Settle(state, nil)
+        Release(state, hidden)
     end
 end
 
+-- Frames come back before others hide, so a child going back to its parent (the pet frame to the
+-- player frame) is there to be kept out when the parent hides.
 function Hider.Flush()
-    for _, s in pairs(frames) do Fade(s) end
+    for _, state in pairs(frames) do Fade(state) end
     if Blocked() then
         Hider.pending = true
         return
     end
     Hider.pending = nil
     local hidden = Hider.Parent()
-    for _, s in pairs(frames) do
-        if not On(s) then Apply(s, hidden) end
+    for _, state in pairs(frames) do
+        if not On(state) then Apply(state, hidden) end
     end
-    for _, s in pairs(frames) do
-        if On(s) then Apply(s, hidden) end
+    for _, state in pairs(frames) do
+        if On(state) then Apply(state, hidden) end
     end
 end
 
+-- Hides them all again now (it does so itself, after combat, loading screens and Edit Mode).
 function Hider.Refresh()
     if next(frames) then Hider.Flush() end
 end
 
+-- owner: the addon's name; frame: a frame or its global name (nothing if the game has none). Hidden
+-- while any owner wants it. opts.fadeOnly: the opacity layer only, for a frame that asks its parent things.
 function Hider.Set(owner, frame, hidden, opts)
     assert(owner ~= nil, "FrogLib.Hider.Set: who's asking (the addon's name) comes first")
     frame = Resolve(frame)
     if not frame then return end
-    local s = frames[frame]
-    if not s then
+    local state = frames[frame]
+    if not state then
         if not hidden then return end
-        s = { frame = frame, owners = {}, kept = {} }
-        frames[frame] = s
-        hooksecurefunc(frame, "SetParent", function(f, parent) Hider.OnSetParent(f, parent) end)
-        hooksecurefunc(frame, "SetAlpha", function(f) Hider.OnSetAlpha(f) end)
+        state = { frame = frame, owners = {}, kept = {} }
+        frames[frame] = state
+        hooksecurefunc(frame, "SetParent", function(hooked, parent) Hider.OnSetParent(hooked, parent) end)
+        hooksecurefunc(frame, "SetAlpha", function(hooked) Hider.OnSetAlpha(hooked) end)
     end
     if hidden then
+        -- opts.keep: children that stay on screen (global names, keys on the frame or frames), such as
+        -- { "PetFrame", "TotemFrame" } for the player frame; each call replaces this owner's list.
         local keep = NONE
         if opts and opts.keep then
             keep = {}
-            for i, k in ipairs(opts.keep) do keep[i] = k end
+            for i, listed in ipairs(opts.keep) do keep[i] = listed end
         end
-        s.owners[owner] = keep
-        s.fadeOnly = opts and opts.fadeOnly or nil
+        state.owners[owner] = keep
+        state.fadeOnly = opts and opts.fadeOnly or nil
     else
-        s.owners[owner] = nil
+        state.owners[owner] = nil
     end
     Hider.Flush()
 end
@@ -278,8 +260,8 @@ function Hider.OnEvent(event)
     if event == "PLAYER_REGEN_ENABLED" then
         if Hider.pending then Hider.Flush() end
     elseif next(frames) then
-        -- A loading screen, Edit Mode closing or a new Edit Mode layout can lay Blizzard's
-        -- frames out again.
+        -- A loading screen, Edit Mode closing or a new Edit Mode layout (gamepad and keyboard swap
+        -- layouts) can lay Blizzard's frames out again.
         Hider.FlushSoon()
     end
 end

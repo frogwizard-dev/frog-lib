@@ -1,43 +1,42 @@
 -- FrogLib Util: small things every addon needs.
---   FrogLib.Util.CopyDefaults(src, dst): fills in what dst (saved settings) is missing from src
---       (the defaults), into nested tables too; what's already set is kept.
---   FrogLib.Util.Merge(src, dst): src's values over dst's, nested tables too.
---   FrogLib.Util.Copy(v) -> a deep copy of v (v itself when it isn't a table).
---   FrogLib.Util.Printer(title, hex) -> print(...) under the addon's coloured name:
---       ns.Print = FrogLib.Util.Printer("FrogTarget", "ffd100")
 
 local Util = FrogLib:Module("Util", 1)
 if not Util then return end
 
-function Util.CopyDefaults(src, dst)
-    for k, v in pairs(src) do
-        if type(v) == "table" then
-            if type(dst[k]) ~= "table" then dst[k] = {} end
-            Util.CopyDefaults(v, dst[k])
-        elseif dst[k] == nil then
-            dst[k] = v
+-- Fills in what saved settings are missing from the defaults, into nested tables too; what's
+-- already set is kept.
+function Util.CopyDefaults(defaults, saved)
+    for key, value in pairs(defaults) do
+        if type(value) == "table" then
+            if type(saved[key]) ~= "table" then saved[key] = {} end
+            Util.CopyDefaults(value, saved[key])
+        elseif saved[key] == nil then
+            saved[key] = value
         end
     end
 end
 
-function Util.Merge(src, dst)
-    for k, v in pairs(src) do
-        if type(v) == "table" then
-            if type(dst[k]) ~= "table" then dst[k] = {} end
-            Util.Merge(v, dst[k])
+-- source's values over target's, nested tables too.
+function Util.Merge(source, target)
+    for key, value in pairs(source) do
+        if type(value) == "table" then
+            if type(target[key]) ~= "table" then target[key] = {} end
+            Util.Merge(value, target[key])
         else
-            dst[k] = v
+            target[key] = value
         end
     end
 end
 
-function Util.Copy(v)
-    if type(v) ~= "table" then return v end
-    local out = {}
-    for k, x in pairs(v) do out[k] = Util.Copy(x) end
-    return out
+-- A deep copy (the value itself when it isn't a table).
+function Util.Copy(value)
+    if type(value) ~= "table" then return value end
+    local copy = {}
+    for key, item in pairs(value) do copy[key] = Util.Copy(item) end
+    return copy
 end
 
+-- print(...) under the addon's coloured name: ns.Print = FrogLib.Util.Printer("FrogTarget", "ffd100")
 function Util.Printer(title, hex)
     local prefix = "|cff" .. hex .. title .. "|r:"
     return function(...) print(prefix, ...) end

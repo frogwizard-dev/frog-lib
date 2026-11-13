@@ -1,5 +1,16 @@
 # FrogLib
 
+## 1.10.0
+
+- UI: every settings control can take a settings table and the setting's name in place of its get and set functions: `UI.Checkbox(page, "Text", db, "key")`. A colour swatch set up this way changes the colour in place.
+- Tank: `Shares` hands out shares of 100% in the game's order, for attack tables (StatSheet's).
+- Text: `Shadowed(parent)`, a font string with the soft shadow the bars' text has, written once for the addons that each had their own.
+- Text: `Coins(copper)`, money with its coin icons as the game writes it, for the three addons that each had their own.
+- Borders: `NineSlice`, eight textures laid out round a region as a nine-slice of any art (the Forever frame's, FrogFrames' bevel and glow).
+- Cast: `NewLine`, the cast line the target and unit frames draw (gold, grey when it can't be interrupted, held in red when it's interrupted, a sample while unlocked), written once for the four that each had their own.
+- Secure: `Watch(button, active)` shows a click button while its unit exists, or keeps it hidden.
+- Under the hood: clearer names and shorter notes throughout. Nothing else works differently.
+
 ## 1.9.0
 
 - Predict: heal prediction on a health bar, as Blizzard's frames draw it: your incoming heals, everyone else's and shields, one after the other past the health. FrogFrames', now shared.

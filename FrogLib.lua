@@ -1,25 +1,7 @@
--- FrogLib: the code Frog Wizard's addons share. It has a repository of its own (frog-lib), and
--- each addon carries a copy in Libs\FrogLib: added by the packager when the addon is built (its
--- .pkgmeta "externals"), and locally by _tools\sync_froglib.py. Never edit an addon's copy.
--- It also loads on its own, as the FrogLib addon.
--- With several addons loaded, the newest copy of each part wins: a part only loads if no copy
--- with the same or a higher minor version has, so a newer one must stay compatible with the old.
---
---   FrogLib:Module(name, minor) -> the part's table to fill in, or nil if one as new is loaded
---   FrogLib.Pixel(frame)        -> one screen pixel in frame's units
---   FrogLib.NoSnap(region)      -> keep a texture exactly where it's put (no pixel snapping)
---   FrogLib.PixelSnap(region)   -> lay a region out on whole screen pixels, its texture unsnapped
---                                  (crisp 1px borders sized in pixels)
---   FrogLib.issecret(v), FrogLib.Safe(v) -> v, or nil when the game hides it from addons
---   FrogLib.Loaded(addon)       -> whether an addon is loaded
--- The parts: Options (the "Frog Wizard" section of Options > AddOns), Media (texture and font
--- lists), Borders (pixel, classic stone and Forever frames), Threat (your lead on a unit), Hider
--- (hiding Blizzard's frames, shared between the addons that hide the same one), Curve (step
--- curves the game reads a secret health or power through), Idle (fade when idle), Swing (swing
--- timers), Cast (reading casts, and when a cast bar shows), FSR (the five-second rule), Text (text
--- templates), Color (class, reaction and power colours), Unit (names, levels, percentages and the
--- template words for a unit), Icons (raid marks and the icons by a name), Secure (click-to-target
--- buttons with the unit menu on right-click) and Predict (heal prediction on a health bar).
+-- FrogLib: the code Frog Wizard's addons share. Each addon carries a copy in Libs\FrogLib (the
+-- packager adds frog-lib's latest release; _tools\sync_froglib.py does it locally; never edit a
+-- copy), and it also loads on its own as the FrogLib addon. With several loaded, the newest copy
+-- of each part wins, so a newer part must stay compatible with the old.
 
 local MINOR = 2 -- 2: PixelSnap (1 shipped in the first releases of the addons)
 
@@ -30,29 +12,33 @@ _G.FrogLib = lib
 lib.minor = MINOR
 lib.modules = lib.modules or {}
 
+-- A part's table to fill in, or nil when a copy of it as new (the same or a higher minor) has loaded.
 function lib:Module(name, minor)
-    local m = self.modules[name]
-    if m and (m.minor or 0) >= minor then return nil end
-    m = m or {}
-    m.minor = minor
-    self.modules[name] = m
-    self[name] = m
-    return m
+    local part = self.modules[name]
+    if part and (part.minor or 0) >= minor then return nil end
+    part = part or {}
+    part.minor = minor
+    self.modules[name] = part
+    self[name] = part
+    return part
 end
 
 -- Midnight hides some combat values from addons ("secret values"): they can be handed to the
 -- game's widgets, but not compared or used in arithmetic.
 lib.issecret = issecretvalue or function() return false end
 
-function lib.Safe(v)
-    if lib.issecret(v) then return nil end
-    return v
+-- The value, or nil when the game hides it.
+function lib.Safe(value)
+    if lib.issecret(value) then return nil end
+    return value
 end
 
+-- One screen pixel in the frame's units.
 function lib.Pixel(frame)
     return 768 / select(2, GetPhysicalScreenSize()) / frame:GetEffectiveScale()
 end
 
+-- Keeps a texture exactly where it's put (no pixel snapping).
 function lib.NoSnap(region)
     if region and region.SetSnapToPixelGrid then
         region:SetSnapToPixelGrid(false)
@@ -60,6 +46,7 @@ function lib.NoSnap(region)
     end
 end
 
+-- Lays a region out on whole screen pixels, its texture unsnapped: crisp 1px borders sized in pixels.
 function lib.PixelSnap(region)
     if region and region.SetRoundLayoutToNearestPixel then region:SetRoundLayoutToNearestPixel(true) end
     lib.NoSnap(region)

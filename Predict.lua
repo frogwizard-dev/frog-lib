@@ -1,24 +1,6 @@
 -- FrogLib Predict: heal prediction on a health bar, as Blizzard's frames draw it (FrogFrames' unit
 -- frames, and the FFXIV gauges through Gauge:EnableHeal): your incoming heals, everyone else's and
 -- damage shields, each a bar of its own, one after the other from the end of the health bar's fill.
---
---   local p = FrogLib.Predict.New(healthBar, opts)   healthBar: a StatusBar
---     opts.parts  which bars, in order (default { "mine", "others", "shield" })
---     opts.colors { mine = { r, g, b, a }, ... } in place of the defaults
---     opts.ease   ease to new amounts (SetValue's smooth interpolation), as a gauge's fill does
---     opts.level  the bars' frame level above healthBar's (default: just above it)
---   p:Update(unit, instant)                  read the unit's amounts and draw them
---   p:SetValues(max, { mine = n, ... }, instant)  draw given amounts (a sample while unlocked)
---   p:SetShown(shown), p:SetColor(part, r, g, b, a), p:SetTexture(path)
---   p:Anchor()   again whenever healthBar's fill texture is replaced
---   p:End()      the last bar's fill texture, to start something else where the prediction ends
---   FrogLib.Predict.Read(unit, calc) -> max, mine, others, shield (any of them may be secret)
---
--- The amounts can be secret, so they're never added up here: each bar is as wide as the health
--- bar, set from 0 to the unit's maximum health and given its amount (status bars take secret
--- values), and starts where the one before it ends (the fill texture's right edge). The game's own
--- heal prediction calculator splits yours from others' and caps them at the health that's
--- missing; anything past the health bar's end is cut off.
 -- Predictions keep their methods in this part's tables, so a newer copy's apply to them.
 
 local Predict = FrogLib:Module("Predict", 1)
@@ -32,103 +14,111 @@ Predict.PARTS = { "mine", "others", "shield" }
 Predict.COLORS = { mine = { 0.35, 1, 0.45, 0.65 }, others = { 0.1, 0.7, 0.3, 0.55 }, shield = { 1, 1, 1, 0.5 } }
 
 Predict.Methods = Predict.Methods or {}
-local P = Predict.Methods
+local Prediction = Predict.Methods
 Predict.Meta = Predict.Meta or {}
-Predict.Meta.__index = P
+Predict.Meta.__index = Prediction
 
--- calc: one from CreateUnitHealPredictionCalculator, where the game has it. Without one, all
--- incoming heals count as "mine" (splitting them would take sums the secret values don't allow).
-function Predict.Read(unit, calc)
+-- max, mine, others, shield (any may be secret). calculator: one from
+-- CreateUnitHealPredictionCalculator; without one, all incoming heals count as "mine".
+function Predict.Read(unit, calculator)
     local max = UnitHealthMax(unit)
-    if calc and UnitGetDetailedHealPrediction then
-        pcall(UnitGetDetailedHealPrediction, unit, "player", calc)
-        local _, mine, others = calc:GetIncomingHeals()
-        return max, mine, others, (calc:GetDamageAbsorbs())
+    if calculator and UnitGetDetailedHealPrediction then
+        pcall(UnitGetDetailedHealPrediction, unit, "player", calculator)
+        local _, mine, others = calculator:GetIncomingHeals()
+        return max, mine, others, (calculator:GetDamageAbsorbs())
     end
     local mine = UnitGetIncomingHeals and UnitGetIncomingHeals(unit) or 0
     local shield = UnitGetTotalAbsorbs and UnitGetTotalAbsorbs(unit) or 0
     return max, mine, 0, shield
 end
 
+-- The amounts can be secret, so they're never added up: each bar is as wide as the health bar, set
+-- from 0 to the unit's maximum health, and starts where the one before it ends (cut off past the end).
 function Predict.New(bar, opts)
+    -- opts.parts: which bars, in order (default PARTS); opts.colors: { mine = { r, g, b, a }, ... };
+    -- opts.ease: ease to new amounts, as a gauge's fill does; opts.level: frame levels above the bar.
     opts = opts or {}
     local clip = CreateFrame("Frame", nil, bar)
     clip:SetAllPoints()
     clip:SetClipsChildren(true)
     if opts.level then clip:SetFrameLevel(bar:GetFrameLevel() + opts.level) end
-    local p = setmetatable({ bar = bar, clip = clip, parts = opts.parts or Predict.PARTS,
+    local prediction = setmetatable({ bar = bar, clip = clip, parts = opts.parts or Predict.PARTS,
         ease = opts.ease, shown = true }, Predict.Meta)
-    if CreateUnitHealPredictionCalculator then p.calc = CreateUnitHealPredictionCalculator() end
-    for _, key in ipairs(p.parts) do
-        local s = CreateFrame("StatusBar", nil, clip)
-        s:SetStatusBarTexture(WHITE)
-        s:SetMinMaxValues(0, 1)
-        s:SetValue(0)
-        p[key] = s
-        local c = (opts.colors and opts.colors[key]) or Predict.COLORS[key] or Predict.COLORS.mine
-        p:SetColor(key, c[1], c[2], c[3], c[4])
+    if CreateUnitHealPredictionCalculator then prediction.calculator = CreateUnitHealPredictionCalculator() end
+    for _, key in ipairs(prediction.parts) do
+        local part = CreateFrame("StatusBar", nil, clip)
+        part:SetStatusBarTexture(WHITE)
+        part:SetMinMaxValues(0, 1)
+        part:SetValue(0)
+        prediction[key] = part
+        local color = (opts.colors and opts.colors[key]) or Predict.COLORS[key] or Predict.COLORS.mine
+        prediction:SetColor(key, color[1], color[2], color[3], color[4])
     end
     local function Size()
-        local w = math.max(1, bar:GetWidth())
-        for _, key in ipairs(p.parts) do p[key]:SetWidth(w) end
+        local width = math.max(1, bar:GetWidth())
+        for _, key in ipairs(prediction.parts) do prediction[key]:SetWidth(width) end
     end
     bar:HookScript("OnSizeChanged", Size)
     Size()
-    p:Anchor()
-    return p
+    prediction:Anchor()
+    return prediction
 end
 
-function P:Anchor()
+-- Again whenever the health bar's fill texture is replaced.
+function Prediction:Anchor()
     local after = self.bar:GetStatusBarTexture()
     for _, key in ipairs(self.parts) do
-        local s = self[key]
-        s:ClearAllPoints()
-        s:SetPoint("TOPLEFT", after, "TOPRIGHT")
-        s:SetPoint("BOTTOMLEFT", after, "BOTTOMRIGHT")
-        after = s:GetStatusBarTexture()
+        local part = self[key]
+        part:ClearAllPoints()
+        part:SetPoint("TOPLEFT", after, "TOPRIGHT")
+        part:SetPoint("BOTTOMLEFT", after, "BOTTOMRIGHT")
+        after = part:GetStatusBarTexture()
     end
 end
 
-function P:End()
+-- The last bar's fill texture, to start something else where the prediction ends.
+function Prediction:End()
     return self[self.parts[#self.parts]]:GetStatusBarTexture()
 end
 
-function P:SetColor(key, r, g, b, a)
-    local s = self[key]
-    if not s then return end
-    s.color = { r, g, b, a or 1 }
-    s:SetStatusBarColor(r, g, b, a or 1)
+function Prediction:SetColor(key, r, g, b, a)
+    local part = self[key]
+    if not part then return end
+    part.color = { r, g, b, a or 1 }
+    part:SetStatusBarColor(r, g, b, a or 1)
 end
 
 -- Each bar's fill texture can be a new one afterwards, so they're anchored again.
-function P:SetTexture(path)
+function Prediction:SetTexture(path)
     for _, key in ipairs(self.parts) do
-        local s = self[key]
-        s:SetStatusBarTexture(path)
-        if s.color then s:SetStatusBarColor(unpack(s.color)) end
+        local part = self[key]
+        part:SetStatusBarTexture(path)
+        if part.color then part:SetStatusBarColor(unpack(part.color)) end
     end
     self:Anchor()
 end
 
-function P:SetValues(max, values, instant)
+-- Given amounts ({ mine = amount, ... }; a sample while unlocked).
+function Prediction:SetValues(max, values, instant)
     for _, key in ipairs(self.parts) do
-        local s = self[key]
-        s:SetMinMaxValues(0, max or 1)
-        local v = values[key] or 0
+        local part = self[key]
+        part:SetMinMaxValues(0, max or 1)
+        local value = values[key] or 0
         if self.ease then
-            s:SetValue(v, instant and IMMEDIATE or SMOOTH)
+            part:SetValue(value, instant and IMMEDIATE or SMOOTH)
         else
-            s:SetValue(v)
+            part:SetValue(value)
         end
     end
 end
 
-function P:Update(unit, instant)
-    local max, mine, others, shield = Predict.Read(unit, self.calc)
+-- The unit's amounts, read and drawn.
+function Prediction:Update(unit, instant)
+    local max, mine, others, shield = Predict.Read(unit, self.calculator)
     self:SetValues(max, { mine = mine, others = others, shield = shield }, instant)
 end
 
-function P:SetShown(shown)
+function Prediction:SetShown(shown)
     self.shown = shown and true or false
     self.clip:SetShown(self.shown)
 end

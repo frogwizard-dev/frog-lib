@@ -1,28 +1,20 @@
--- FrogLib StatList: the character sheet's stats as one long list, Classic-style: every stat the
--- game can show, grouped (general, attributes, melee, ranged, spell, defense, resistances), not
--- just the handful Forever's own pane picks (FrogUI's stats pane, StatSheet's List tab).
--- Each line is filled by the game's own stat function (PAPERDOLL_STATINFO), so the numbers and
+-- FrogLib StatList: the character sheet's stats as one long list, Classic-style: every stat the game
+-- can show, grouped, not only the handful Forever's own pane picks (FrogUI's stats pane, StatSheet's
+-- List tab). Each line is filled by the game's own stat function (PAPERDOLL_STATINFO), so numbers and
 -- tooltips are exactly the character sheet's; a few it doesn't have are worked out from its numbers.
---
---   FrogLib.StatList.CATEGORIES = { { name, { entry, ... } }, ... }
---       entry: { stat = "PAPERDOLL_STATINFO key" } or { own = "MELEE_DPS" ... }; hideAt (leave it out
---       at this value, an off-hand that isn't there), slot (a weapon skill's slot), ranged (only
---       with a ranged weapon), icon (a resistance's icon: its row in RESIST_ICONS).
---   FrogLib.StatList.PET_CATEGORIES: the same for your pet (the game's own pet stats, its damage,
---       a hunter's pet's happiness, loyalty, training points, experience and food, resistances).
---   FrogLib.StatList.Fill(row, entry, unit) -> whether to show it. unit: "player" (the default)
---       or "pet". row needs .Label and .Value FontStrings and Show/Hide; it's left as the game's
---       stat functions leave it (tooltip, tooltip2, tooltip3, onEnterFunc, numericValue), for
---       PaperDollStatTooltip(row).
---   FrogLib.StatList.Read(entry, unit) -> label, value, tooltip lines (a table), or nil when it
---       doesn't apply: through a hidden row of its own. Label and value may be secret.
---   FrogLib.StatList.RESIST_ICONS, RESIST_STEP: the five resistance icons in one texture.
 
 local StatList = FrogLib:Module("StatList", 3) -- 2: your pet's list, Fill and Read for a unit; 3: Forever's C_PetInfo
 if not StatList then return end
 
 local issecret = FrogLib.issecret
 
+local RESISTANCES = {
+    { stat = "ARCANE_RESIST", icon = 2 }, { stat = "FIRE_RESIST", icon = 0 }, { stat = "FROST_RESIST", icon = 3 },
+    { stat = "NATURE_RESIST", icon = 1 }, { stat = "SHADOW_RESIST", icon = 4 },
+}
+
+-- { { name, { entry, ... } }, ... }. entry: { stat = PAPERDOLL_STATINFO key } or { own = OWN key }, and
+-- hideAt (left out at this value), slot (a weapon skill's), ranged (with a ranged weapon only), icon.
 StatList.CATEGORIES = {
     { STAT_CATEGORY_GENERAL or "General", {
         { stat = "HEALTH" }, { stat = "POWER" }, { stat = "ALTERNATEMANA" }, { stat = "ITEMLEVEL" },
@@ -49,15 +41,7 @@ StatList.CATEGORIES = {
     { PLAYERSTAT_DEFENSES or DEFENSE or "Defense", {
         { stat = "ARMOR" }, { stat = "DEFENSE" }, { stat = "DODGE" }, { stat = "PARRY" }, { stat = "BLOCK" },
     } },
-    { RESISTANCE_LABEL or "Resistances", {
-        { stat = "ARCANE_RESIST", icon = 2 }, { stat = "FIRE_RESIST", icon = 0 }, { stat = "FROST_RESIST", icon = 3 },
-        { stat = "NATURE_RESIST", icon = 1 }, { stat = "SHADOW_RESIST", icon = 4 },
-    } },
-}
-
-local RESISTANCES = {
-    { stat = "ARCANE_RESIST", icon = 2 }, { stat = "FIRE_RESIST", icon = 0 }, { stat = "FROST_RESIST", icon = 3 },
-    { stat = "NATURE_RESIST", icon = 1 }, { stat = "SHADOW_RESIST", icon = 4 },
+    { RESISTANCE_LABEL or "Resistances", RESISTANCES },
 }
 
 -- Your pet: the game's own pet stats (Forever's pet pane), plus its damage per second and speed,
@@ -81,7 +65,8 @@ StatList.PET_CATEGORIES = {
     { RESISTANCE_LABEL or "Resistances", RESISTANCES },
 }
 
--- The game's resistance icons, five stacked in one texture (fire, nature, arcane, frost, shadow).
+-- The game's resistance icons, five stacked in one texture (fire, nature, arcane, frost, shadow): an
+-- entry's icon is its row.
 StatList.RESIST_ICONS = "Interface\\PaperDollInfoFrame\\UI-Character-ResistanceIcons"
 StatList.RESIST_STEP = 0.11328125
 
@@ -172,9 +157,9 @@ OWN.PET_TRAINING = function()
 end
 OWN.PET_XP = function()
     if not GetPetExperience then return nil end
-    local cur, max = GetPetExperience()
-    if not (cur and max and max > 0) then return nil end
-    return XP or "Experience", ("%d / %d (%d%%)"):format(cur, max, cur / max * 100),
+    local current, max = GetPetExperience()
+    if not (current and max and max > 0) then return nil end
+    return XP or "Experience", ("%d / %d (%d%%)"):format(current, max, current / max * 100),
         "It levels up to your level, from the kills you share."
 end
 OWN.PET_FOOD = function()
@@ -190,6 +175,8 @@ OWN.SPELL_CRIT = function()
     return SPELL_CRIT_CHANCE or "Crit Chance", ("%.2f%%"):format(best), "Chance to crit with spells."
 end
 
+-- Whether to show it. unit: "player" (the default) or "pet". row needs .Label and .Value font strings;
+-- it's left as the game's stat functions leave it (tooltip, tooltip2...), for PaperDollStatTooltip.
 function StatList.Fill(row, entry, unit)
     unit = unit or "player"
     row.onEnterFunc, row.UpdateTooltip, row.tooltip, row.tooltip2, row.tooltip3 = nil, nil, nil, nil, nil
@@ -218,7 +205,7 @@ function StatList.Fill(row, entry, unit)
     local ok = pcall(info.updateFunc, row, unit, extra)
     if not ok or not row:IsShown() then return false end
     -- Blizzard's stat functions can leave secret values here (in combat or restricted content):
-    -- those can't be compared, so a secret label or value just keeps the row.
+    -- those can't be compared, so a secret label or value keeps the row.
     local label = row.Label:GetText()
     if not issecret(label) and (label == nil or label == "") then return false end
     local value = row.numericValue
@@ -228,26 +215,27 @@ end
 
 -- A row of its own, out of sight, for reading one stat at a time.
 local function Scratch()
-    local r = StatList.scratch
-    if r then return r end
-    r = CreateFrame("Frame", nil, FrogLib.Hider and FrogLib.Hider.Parent and FrogLib.Hider.Parent() or UIParent)
-    r:SetSize(200, 15)
-    r:Hide()
-    r.Label = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    r.Value = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    StatList.scratch = r
-    return r
+    local row = StatList.scratch
+    if row then return row end
+    row = CreateFrame("Frame", nil, FrogLib.Hider and FrogLib.Hider.Parent and FrogLib.Hider.Parent() or UIParent)
+    row:SetSize(200, 15)
+    row:Hide()
+    row.Label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.Value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    StatList.scratch = row
+    return row
 end
 
+-- label, value (either may be secret) and tooltip lines (a table), or nil when it doesn't apply.
 function StatList.Read(entry, unit)
-    local r = Scratch()
-    local shown = StatList.Fill(r, entry, unit)
-    r:Hide()
+    local row = Scratch()
+    local shown = StatList.Fill(row, entry, unit)
+    row:Hide()
     if not shown then return nil end
     local tips = {}
     for _, key in ipairs({ "tooltip", "tooltip2", "tooltip3" }) do
-        local t = r[key]
-        if issecret(t) or (type(t) == "string" and t ~= "") then tips[#tips + 1] = t end
+        local tip = row[key]
+        if issecret(tip) or (type(tip) == "string" and tip ~= "") then tips[#tips + 1] = tip end
     end
-    return r.Label:GetText(), r.Value:GetText(), tips
+    return row.Label:GetText(), row.Value:GetText(), tips
 end

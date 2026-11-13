@@ -1,25 +1,15 @@
 -- FrogLib Text: text templates, the words people type into a text box ("value / max  percent")
 -- turned into a format string the game fills in. Values may be secret, so they're only ever
 -- formatted engine-side by SetFormattedText, never looked at here.
---   FrogLib.Text.WORDS            the built-in words: value, max (whole numbers), percent ("76%";
---                                 percent.1 for "76.4%", up to three places)
---   FrogLib.Text.Compile(template, words) -> { pattern, args, uses }
---       words: the caller's own words, over the built-in ones: a list of names formatted as text
---       ({ "name", "level" }), or a table of name = kind, kind "text", "number" or "percent".
---       pattern: the format string ("|" doubled, as a single one starts a text escape; a "||"
---       typed into an edit box counts as one); args: the words in order (each time it's used);
---       uses[word]: whether the template uses a word. Made once per template and set of words.
---   FrogLib.Text.Set(fs, template, vals, words) -> whether the text went in
---       The template with vals[word] filled in, any number of words. An empty template hides fs
---       (shown otherwise). A missing value is blank (text words) or 0 (numbers); one the format
---       can't take (or a secret "nothing") leaves the old text.
 
-local Text = FrogLib:Module("Text", 1)
+local Text = FrogLib:Module("Text", 2) -- 2: Shadowed, Coins
 if not Text then return end
 
 local issecret = FrogLib.issecret
 local unpack = unpack or table.unpack
 
+-- The built-in words: value, max (whole numbers), percent ("76%"; percent.1 for "76.4%", up to
+-- three places).
 Text.WORDS = { value = "number", max = "number", percent = "percent" }
 local FORMAT = { text = "%s", number = "%d" }
 local BLANK = { text = "", number = 0, percent = 0 }
@@ -35,11 +25,11 @@ local function Key(words)
     local key = Text.keys[words]
     if key then return key end
     local parts = {}
-    for k, v in pairs(words) do
-        if type(k) == "number" then
-            parts[#parts + 1] = tostring(v):lower() .. "=text"
+    for name, kind in pairs(words) do
+        if type(name) == "number" then
+            parts[#parts + 1] = tostring(kind):lower() .. "=text" -- a listed name
         else
-            parts[#parts + 1] = tostring(k):lower() .. "=" .. tostring(v)
+            parts[#parts + 1] = tostring(name):lower() .. "=" .. tostring(kind)
         end
     end
     table.sort(parts)
@@ -52,13 +42,15 @@ local function Kind(word, words)
     if words then
         local kind = words[word]
         if kind then return kind end
-        for _, w in ipairs(words) do
-            if type(w) == "string" and w:lower() == word then return "text" end
+        for _, listed in ipairs(words) do
+            if type(listed) == "string" and listed:lower() == word then return "text" end
         end
     end
     return Text.WORDS[word]
 end
 
+-- { pattern, args, uses }, made once per template and set of words. words: the caller's own, over
+-- the built-in ones: names shown as text ({ "name", "level" }), or name = "text", "number" or "percent".
 function Text.Compile(template, words)
     local key = Key(words)
     local byTemplate = Text.cache[key]
@@ -66,19 +58,21 @@ function Text.Compile(template, words)
         byTemplate = {}
         Text.cache[key] = byTemplate
     end
-    local c = byTemplate[template]
-    if c then return c end
+    local compiled = byTemplate[template]
+    if compiled then return compiled end
+    -- args: the words in order, each time it's used; uses[word]: whether the template uses it.
     local args, blank, uses = {}, {}, {}
     local pattern = template:gsub("%%", "%%%%")
-    pattern = pattern:gsub("||", "|") -- edit boxes store a typed "|" already doubled
+    -- "|" doubled, as one alone starts an escape (edit boxes store a typed "|" already doubled).
+    pattern = pattern:gsub("||", "|")
     pattern = pattern:gsub("|", "||")
-    pattern = pattern:gsub("(%a+)(%.?%d*)", function(word, suffix)
-        local w = word:lower()
-        local kind = Kind(w, words)
+    pattern = pattern:gsub("(%a+)(%.?%d*)", function(typed, suffix)
+        local word = typed:lower()
+        local kind = Kind(word, words)
         if not kind then return nil end
-        args[#args + 1] = w
+        args[#args + 1] = word
         blank[#args] = BLANK[kind] or ""
-        uses[w] = true
+        uses[word] = true
         if kind == "percent" then
             local places = tonumber(suffix:match("^%.(%d)"))
             if places then return "%." .. math.min(places, 3) .. "f%%" end
@@ -86,28 +80,57 @@ function Text.Compile(template, words)
         end
         return (FORMAT[kind] or "%s") .. suffix
     end)
-    c = { pattern = pattern, args = args, blank = blank, uses = uses }
-    byTemplate[template] = c
-    return c
+    compiled = { pattern = pattern, args = args, blank = blank, uses = uses }
+    byTemplate[template] = compiled
+    return compiled
 end
 
-local out = {}
+-- A font string with the soft black shadow the bars' text has, in a default font up front: SetText
+-- errors on a font string with none, and the addon's own font only goes on at its layout.
+function Text.Shadowed(parent)
+    local fontString = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fontString:SetShadowOffset(1, -1)
+    fontString:SetShadowColor(0, 0, 0, 0.9)
+    return fontString
+end
 
-function Text.Set(fs, template, vals, words)
+local COIN = "|TInterface\\MoneyFrame\\UI-%sIcon:0:0:1:0|t"
+
+-- Money as the game writes it with coin icons ("4g 50s 20c"); built here on a client without that.
+function Text.Coins(copper)
+    copper = copper or 0
+    local Format = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+    if Format then
+        local ok, text = pcall(Format, copper)
+        if ok and type(text) == "string" then return text end
+    end
+    local gold, silver, rest = math.floor(copper / 10000), math.floor(copper % 10000 / 100), copper % 100
+    local parts = {}
+    if gold > 0 then parts[#parts + 1] = gold .. COIN:format("Gold") end
+    if silver > 0 then parts[#parts + 1] = silver .. COIN:format("Silver") end
+    if rest > 0 or #parts == 0 then parts[#parts + 1] = rest .. COIN:format("Copper") end
+    return table.concat(parts, " ")
+end
+
+local filled = {}
+
+-- The template into the font string with values[word] filled in (blank or 0 when missing), and
+-- whether it went in: a value the format can't take leaves the old text. An empty template hides it.
+function Text.Set(fontString, template, values, words)
     if type(template) ~= "string" or not template:find("%S") then
-        fs:Hide()
+        fontString:Hide()
         return false
     end
-    fs:Show()
-    local c = Text.Compile(template, words)
-    local n = #c.args
-    vals = vals or NONE
-    for i = 1, n do
-        local v = vals[c.args[i]]
-        if not issecret(v) and v == nil then v = c.blank[i] end
-        out[i] = v
+    fontString:Show()
+    local compiled = Text.Compile(template, words)
+    local count = #compiled.args
+    values = values or NONE
+    for i = 1, count do
+        local value = values[compiled.args[i]]
+        if not issecret(value) and value == nil then value = compiled.blank[i] end
+        filled[i] = value
     end
-    local ok = pcall(fs.SetFormattedText, fs, c.pattern, unpack(out, 1, n))
-    for i = 1, n do out[i] = nil end
+    local ok = pcall(fontString.SetFormattedText, fontString, compiled.pattern, unpack(filled, 1, count))
+    for i = 1, count do filled[i] = nil end
     return ok
 end

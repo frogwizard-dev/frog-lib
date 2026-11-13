@@ -1,31 +1,9 @@
--- FrogLib Borders: the three border looks Frog Wizard's bars share, each crisp at any scale.
---   local e = FrogLib.Borders.Edges(frame, bar, layer, sublevel)
---       Four textures (made on `frame`) round `bar`: e:Place(size, out, color) puts them `size`
---       screen pixels thick, starting `out` pixels outside the bar; e:SetColor(c), e:SetShown(on).
---   local s = FrogLib.Borders.Stone(bar, levelAbove)
---       The grey stone border old frames and tooltips use, 3 units outside the bar (its line then
---       meets the fill): a BackdropTemplate frame. FrogLib.Borders.ColorStone(s, c) recolours it.
---   local f = FrogLib.Borders.Forever(bar, layer, sublevel)
---       Our Forever-style frame (Media\ForeverFrame.tga, 16x16): a dark outline, a light metallic
---       rim brighter along the top, and a dark inner line, each one texel wide, with the corners
---       cut. Nine-sliced at a whole number of screen pixels per texel (f:Place(thickness), 1 to 3),
---       so nothing stretches but its straight edges. It sits 2 texels out from the bar, its inner
---       line over the fill's edge. f:SetShown(on).
--- Pixel sizes change with the frame's scale: place them again when it changes.
---   local c = FrogLib.Borders.Carved(bar, layer, sublevel)
---       Classic's action bar frame (the carved stone round each button well of the old bar, from
---       Blizzard's own UI-MainMenuBar-Dwarf): 4 texels of stone with the riveted joints in its
---       corners, nine-sliced at a whole number of screen pixels per texel (c:Place(thickness),
---       1 to 3). It sits 4 texels out from the bar. c:SetShown(on).
---   FrogLib.Borders.Show(parts, style, o): one of a bar's borders shown, the others hidden.
---       parts = { edges =, stone =, forever =, carved = } (any may be missing); style "pixel",
---       "classic", "forever" or "carved"; o.size (edges, screen pixels; 0 hides them), o.color
---       (edges), o.stoneColor, o.thickness (Forever and carved).
---   FrogLib.Borders.Reach(style, o, px) -> how far that border reaches outside the bar, in screen
---       pixels (px: one screen pixel in the bar's units, for the stone's 3 units).
+-- FrogLib Borders: the border looks Frog Wizard's bars share (pixel edges, classic stone, our
+-- Forever frame, Classic's carved bar frame), each crisp at any scale. Pixel sizes change with the
+-- frame's scale: place them again when it changes.
 
 local ADDON = ...
-local Borders = FrogLib:Module("Borders", 4) -- 3: Show, Reach; 4: Carved
+local Borders = FrogLib:Module("Borders", 5) -- 3: Show, Reach; 4: Carved; 5: NineSlice
 if not Borders then return end
 
 local Pixel, NoSnap = FrogLib.Pixel, FrogLib.NoSnap
@@ -34,9 +12,40 @@ local HOME = ADDON == "FrogLib" and "Interface\\AddOns\\FrogLib\\"
     or ("Interface\\AddOns\\" .. ADDON .. "\\Libs\\FrogLib\\")
 Borders.FOREVER_FILE = HOME .. "Media\\ForeverFrame.tga"
 Borders.STONE_FILE = "Interface\\Tooltips\\UI-Tooltip-Border"
-local FRAME_SIZE, FRAME_SLICE, FRAME_OUT = 16, 3, 2
+local FRAME_OUT = 2
+local FOREVER_ART = { size = 16, slice = 3 }
 local FRAME_KEYS = { "tl", "t", "tr", "l", "r", "bl", "b", "br" }
+local CORNERS = { "tl", "tr", "bl", "br" }
 local SIDES = { "top", "bottom", "left", "right" }
+
+-- Eight textures (parts.tl, t, tr, l, r, bl, b, br) as a nine-slice of art ({ size, slice } in
+-- texels) round region: corners `slice` texels square, `out` texels outside it, `unit` per texel.
+function Borders.NineSlice(parts, region, art, out, unit)
+    local corner, outside = art.slice * unit, out * unit
+    local near, far = art.slice / art.size, (art.size - art.slice) / art.size
+    parts.tl:SetTexCoord(0, near, 0, near)
+    parts.t:SetTexCoord(near, far, 0, near)
+    parts.tr:SetTexCoord(far, 1, 0, near)
+    parts.l:SetTexCoord(0, near, near, far)
+    parts.r:SetTexCoord(far, 1, near, far)
+    parts.bl:SetTexCoord(0, near, far, 1)
+    parts.b:SetTexCoord(near, far, far, 1)
+    parts.br:SetTexCoord(far, 1, far, 1)
+    for _, texture in pairs(parts) do texture:ClearAllPoints() end
+    parts.tl:SetPoint("TOPLEFT", region, "TOPLEFT", -outside, outside)
+    parts.tr:SetPoint("TOPRIGHT", region, "TOPRIGHT", outside, outside)
+    parts.bl:SetPoint("BOTTOMLEFT", region, "BOTTOMLEFT", -outside, -outside)
+    parts.br:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", outside, -outside)
+    for _, key in ipairs(CORNERS) do parts[key]:SetSize(corner, corner) end
+    parts.t:SetPoint("TOPLEFT", parts.tl, "TOPRIGHT")
+    parts.t:SetPoint("BOTTOMRIGHT", parts.tr, "BOTTOMLEFT")
+    parts.b:SetPoint("TOPLEFT", parts.bl, "TOPRIGHT")
+    parts.b:SetPoint("BOTTOMRIGHT", parts.br, "BOTTOMLEFT")
+    parts.l:SetPoint("TOPLEFT", parts.tl, "BOTTOMLEFT")
+    parts.l:SetPoint("BOTTOMRIGHT", parts.bl, "TOPRIGHT")
+    parts.r:SetPoint("TOPLEFT", parts.tr, "BOTTOMLEFT")
+    parts.r:SetPoint("BOTTOMRIGHT", parts.br, "TOPRIGHT")
+end
 
 ------------------------------------------------------------------------------
 -- Pixel edges
@@ -46,41 +55,43 @@ Borders.EdgesMethods = Borders.EdgesMethods or {}
 local Edges = Borders.EdgesMethods
 Borders.EdgesMeta = Borders.EdgesMeta or { __index = Edges }
 
+-- Four textures, made on `frame`, round `bar`.
 function Borders.Edges(frame, bar, layer, sublevel)
-    local e = { frame = frame, bar = bar or frame }
+    local edges = { frame = frame, bar = bar or frame }
     for _, key in ipairs(SIDES) do
-        local t = frame:CreateTexture(nil, layer or "BORDER", nil, sublevel or 0)
-        NoSnap(t)
-        e[key] = t
+        local texture = frame:CreateTexture(nil, layer or "BORDER", nil, sublevel or 0)
+        NoSnap(texture)
+        edges[key] = texture
     end
-    return setmetatable(e, Borders.EdgesMeta)
+    return setmetatable(edges, Borders.EdgesMeta)
 end
 
+-- `size` screen pixels thick, starting `out` pixels outside the bar.
 function Edges:Place(size, out, color)
-    local p = Pixel(self.frame)
-    local t, o = p * (size or 1), p * (out or 0)
+    local pixel = Pixel(self.frame)
+    local thick, outside = pixel * (size or 1), pixel * (out or 0)
     local bar = self.bar
     self.top:ClearAllPoints()
-    self.top:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", -(o + t), o)
-    self.top:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", o + t, o)
-    self.top:SetHeight(t)
+    self.top:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", -(outside + thick), outside)
+    self.top:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", outside + thick, outside)
+    self.top:SetHeight(thick)
     self.bottom:ClearAllPoints()
-    self.bottom:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", -(o + t), -o)
-    self.bottom:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", o + t, -o)
-    self.bottom:SetHeight(t)
+    self.bottom:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", -(outside + thick), -outside)
+    self.bottom:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", outside + thick, -outside)
+    self.bottom:SetHeight(thick)
     self.left:ClearAllPoints()
-    self.left:SetPoint("TOPRIGHT", bar, "TOPLEFT", -o, o)
-    self.left:SetPoint("BOTTOMRIGHT", bar, "BOTTOMLEFT", -o, -o)
-    self.left:SetWidth(t)
+    self.left:SetPoint("TOPRIGHT", bar, "TOPLEFT", -outside, outside)
+    self.left:SetPoint("BOTTOMRIGHT", bar, "BOTTOMLEFT", -outside, -outside)
+    self.left:SetWidth(thick)
     self.right:ClearAllPoints()
-    self.right:SetPoint("TOPLEFT", bar, "TOPRIGHT", o, o)
-    self.right:SetPoint("BOTTOMLEFT", bar, "BOTTOMRIGHT", o, -o)
-    self.right:SetWidth(t)
+    self.right:SetPoint("TOPLEFT", bar, "TOPRIGHT", outside, outside)
+    self.right:SetPoint("BOTTOMLEFT", bar, "BOTTOMRIGHT", outside, -outside)
+    self.right:SetWidth(thick)
     if color then self:SetColor(color) end
 end
 
-function Edges:SetColor(c)
-    for _, key in ipairs(SIDES) do self[key]:SetColorTexture(c.r, c.g, c.b, c.a or 1) end
+function Edges:SetColor(color)
+    for _, key in ipairs(SIDES) do self[key]:SetColorTexture(color.r, color.g, color.b, color.a or 1) end
 end
 
 function Edges:SetShown(shown)
@@ -91,19 +102,21 @@ end
 -- Classic stone
 ------------------------------------------------------------------------------
 
+-- The grey stone border old frames and tooltips use, 3 units outside the bar (its line then meets
+-- the fill): a BackdropTemplate frame.
 function Borders.Stone(bar, levelAbove)
-    local s = CreateFrame("Frame", nil, bar, "BackdropTemplate")
-    s:SetFrameLevel(bar:GetFrameLevel() + (levelAbove or 1))
-    s:SetPoint("TOPLEFT", bar, "TOPLEFT", -3, 3)
-    s:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 3, -3)
-    s:SetBackdrop({ edgeFile = Borders.STONE_FILE, edgeSize = 12 })
-    s:SetBackdropBorderColor(0.75, 0.75, 0.75, 1)
-    return s
+    local stone = CreateFrame("Frame", nil, bar, "BackdropTemplate")
+    stone:SetFrameLevel(bar:GetFrameLevel() + (levelAbove or 1))
+    stone:SetPoint("TOPLEFT", bar, "TOPLEFT", -3, 3)
+    stone:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 3, -3)
+    stone:SetBackdrop({ edgeFile = Borders.STONE_FILE, edgeSize = 12 })
+    stone:SetBackdropBorderColor(0.75, 0.75, 0.75, 1)
+    return stone
 end
 
-function Borders.ColorStone(s, c)
-    c = c or { r = 0.75, g = 0.75, b = 0.75 }
-    s:SetBackdropBorderColor(c.r, c.g, c.b, c.a or 1)
+function Borders.ColorStone(stone, color)
+    color = color or { r = 0.75, g = 0.75, b = 0.75 }
+    stone:SetBackdropBorderColor(color.r, color.g, color.b, color.a or 1)
 end
 
 ------------------------------------------------------------------------------
@@ -114,48 +127,26 @@ Borders.ForeverMethods = Borders.ForeverMethods or {}
 local Forever = Borders.ForeverMethods
 Borders.ForeverMeta = Borders.ForeverMeta or { __index = Forever }
 
+-- Media\ForeverFrame.tga, 16x16: a dark outline, a light metallic rim brighter along the top and a
+-- dark inner line, each a texel wide, corners cut; 2 texels out, its inner line over the fill's edge.
 function Borders.Forever(bar, layer, sublevel)
-    local f = { bar = bar, parts = {} }
+    local border = { bar = bar, parts = {} }
     for _, key in ipairs(FRAME_KEYS) do
-        local t = bar:CreateTexture(nil, layer or "OVERLAY", nil, sublevel or 5)
-        t:SetTexture(Borders.FOREVER_FILE, nil, nil, "NEAREST")
-        NoSnap(t)
-        f.parts[key] = t
+        local texture = bar:CreateTexture(nil, layer or "OVERLAY", nil, sublevel or 5)
+        texture:SetTexture(Borders.FOREVER_FILE, nil, nil, "NEAREST")
+        NoSnap(texture)
+        border.parts[key] = texture
     end
-    return setmetatable(f, Borders.ForeverMeta)
+    return setmetatable(border, Borders.ForeverMeta)
 end
 
+-- Nine-sliced at a whole number (1 to 3) of screen pixels per texel, so only its straight edges stretch.
 function Forever:Place(thickness)
-    local p, bar = self.parts, self.bar
-    local px = (thickness or 1) * Pixel(bar)
-    local m, out = FRAME_SLICE * px, FRAME_OUT * px
-    local a, b = FRAME_SLICE / FRAME_SIZE, (FRAME_SIZE - FRAME_SLICE) / FRAME_SIZE
-    p.tl:SetTexCoord(0, a, 0, a)
-    p.t:SetTexCoord(a, b, 0, a)
-    p.tr:SetTexCoord(b, 1, 0, a)
-    p.l:SetTexCoord(0, a, a, b)
-    p.r:SetTexCoord(b, 1, a, b)
-    p.bl:SetTexCoord(0, a, b, 1)
-    p.b:SetTexCoord(a, b, b, 1)
-    p.br:SetTexCoord(b, 1, b, 1)
-    for _, t in pairs(p) do t:ClearAllPoints() end
-    p.tl:SetPoint("TOPLEFT", bar, "TOPLEFT", -out, out)
-    p.tr:SetPoint("TOPRIGHT", bar, "TOPRIGHT", out, out)
-    p.bl:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -out, -out)
-    p.br:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", out, -out)
-    for _, key in ipairs({ "tl", "tr", "bl", "br" }) do p[key]:SetSize(m, m) end
-    p.t:SetPoint("TOPLEFT", p.tl, "TOPRIGHT")
-    p.t:SetPoint("BOTTOMRIGHT", p.tr, "BOTTOMLEFT")
-    p.b:SetPoint("TOPLEFT", p.bl, "TOPRIGHT")
-    p.b:SetPoint("BOTTOMRIGHT", p.br, "BOTTOMLEFT")
-    p.l:SetPoint("TOPLEFT", p.tl, "BOTTOMLEFT")
-    p.l:SetPoint("BOTTOMRIGHT", p.bl, "TOPRIGHT")
-    p.r:SetPoint("TOPLEFT", p.tr, "BOTTOMLEFT")
-    p.r:SetPoint("BOTTOMRIGHT", p.br, "TOPRIGHT")
+    Borders.NineSlice(self.parts, self.bar, FOREVER_ART, FRAME_OUT, (thickness or 1) * Pixel(self.bar))
 end
 
 function Forever:SetShown(shown)
-    for _, t in pairs(self.parts) do t:SetShown(shown and true or false) end
+    for _, texture in pairs(self.parts) do texture:SetShown(shown and true or false) end
 end
 
 -- Its textures, for code that needs to tell them apart from the game's (PRT hides the rest).
@@ -170,63 +161,67 @@ end
 Borders.CARVED_FILE = "Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf"
 -- One button well of the old bar, its frame included (texels of the 256 x 256 file): the frame is
 -- 4 texels on each side, the corners 7 (their rivets).
-local WELL_L, WELL_R, WELL_T, WELL_B = 41, 88, 149, 192
+local WELL_LEFT, WELL_RIGHT, WELL_TOP, WELL_BOTTOM = 41, 88, 149, 192
 local CARVED_EDGE, CARVED_CORNER = 4, 7
 
 Borders.CarvedMethods = Borders.CarvedMethods or {}
 local Carved = Borders.CarvedMethods
 Borders.CarvedMeta = Borders.CarvedMeta or { __index = Carved }
 
+-- The carved stone round each button well of the old bar (Blizzard's UI-MainMenuBar-Dwarf), its
+-- riveted joints in the corners, 4 texels out from the bar.
 function Borders.Carved(bar, layer, sublevel)
-    local c = { bar = bar, parts = {} }
+    local border = { bar = bar, parts = {} }
     for _, key in ipairs(FRAME_KEYS) do
-        local t = bar:CreateTexture(nil, layer or "OVERLAY", nil, sublevel or 5)
-        t:SetTexture(Borders.CARVED_FILE, nil, nil, "NEAREST")
-        NoSnap(t)
-        c.parts[key] = t
+        local texture = bar:CreateTexture(nil, layer or "OVERLAY", nil, sublevel or 5)
+        texture:SetTexture(Borders.CARVED_FILE, nil, nil, "NEAREST")
+        NoSnap(texture)
+        border.parts[key] = texture
     end
-    return setmetatable(c, Borders.CarvedMeta)
+    return setmetatable(border, Borders.CarvedMeta)
 end
 
-local function Coords(t, l, r, top, b)
-    t:SetTexCoord(l / 256, r / 256, top / 256, b / 256)
+local function Cut(texture, left, right, top, bottom)
+    texture:SetTexCoord(left / 256, right / 256, top / 256, bottom / 256)
 end
 
+-- Nine-sliced at a whole number (1 to 3) of screen pixels per texel.
 function Carved:Place(thickness)
-    local p, bar = self.parts, self.bar
-    local px = (thickness or 1) * Pixel(bar)
-    local m, e = CARVED_CORNER * px, CARVED_EDGE * px
-    local L, R, T, B, C, E = WELL_L, WELL_R, WELL_T, WELL_B, CARVED_CORNER, CARVED_EDGE
-    Coords(p.tl, L, L + C, T, T + C)
-    Coords(p.tr, R - C, R, T, T + C)
-    Coords(p.bl, L, L + C, B - C, B)
-    Coords(p.br, R - C, R, B - C, B)
-    Coords(p.t, L + C, R - C, T, T + E)
-    Coords(p.b, L + C, R - C, B - E, B)
-    Coords(p.l, L, L + E, T + C, B - C)
-    Coords(p.r, R - E, R, T + C, B - C)
-    for _, t in pairs(p) do t:ClearAllPoints() end
-    p.tl:SetPoint("TOPLEFT", bar, "TOPLEFT", -e, e)
-    p.tr:SetPoint("TOPRIGHT", bar, "TOPRIGHT", e, e)
-    p.bl:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -e, -e)
-    p.br:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", e, -e)
-    for _, key in ipairs({ "tl", "tr", "bl", "br" }) do p[key]:SetSize(m, m) end
-    p.t:SetPoint("TOPLEFT", p.tl, "TOPRIGHT")
-    p.t:SetPoint("TOPRIGHT", p.tr, "TOPLEFT")
-    p.t:SetHeight(e)
-    p.b:SetPoint("BOTTOMLEFT", p.bl, "BOTTOMRIGHT")
-    p.b:SetPoint("BOTTOMRIGHT", p.br, "BOTTOMLEFT")
-    p.b:SetHeight(e)
-    p.l:SetPoint("TOPLEFT", p.tl, "BOTTOMLEFT")
-    p.l:SetPoint("BOTTOMLEFT", p.bl, "TOPLEFT")
-    p.l:SetWidth(e)
-    p.r:SetPoint("TOPRIGHT", p.tr, "BOTTOMRIGHT")
-    p.r:SetPoint("BOTTOMRIGHT", p.br, "TOPRIGHT")
-    p.r:SetWidth(e)
+    local parts, bar = self.parts, self.bar
+    local pixel = (thickness or 1) * Pixel(bar)
+    local cornerSize, edgeSize = CARVED_CORNER * pixel, CARVED_EDGE * pixel
+    local left, right, top, bottom = WELL_LEFT, WELL_RIGHT, WELL_TOP, WELL_BOTTOM
+    local corner, edge = CARVED_CORNER, CARVED_EDGE
+    Cut(parts.tl, left, left + corner, top, top + corner)
+    Cut(parts.tr, right - corner, right, top, top + corner)
+    Cut(parts.bl, left, left + corner, bottom - corner, bottom)
+    Cut(parts.br, right - corner, right, bottom - corner, bottom)
+    Cut(parts.t, left + corner, right - corner, top, top + edge)
+    Cut(parts.b, left + corner, right - corner, bottom - edge, bottom)
+    Cut(parts.l, left, left + edge, top + corner, bottom - corner)
+    Cut(parts.r, right - edge, right, top + corner, bottom - corner)
+    for _, texture in pairs(parts) do texture:ClearAllPoints() end
+    parts.tl:SetPoint("TOPLEFT", bar, "TOPLEFT", -edgeSize, edgeSize)
+    parts.tr:SetPoint("TOPRIGHT", bar, "TOPRIGHT", edgeSize, edgeSize)
+    parts.bl:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -edgeSize, -edgeSize)
+    parts.br:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", edgeSize, -edgeSize)
+    for _, key in ipairs(CORNERS) do parts[key]:SetSize(cornerSize, cornerSize) end
+    parts.t:SetPoint("TOPLEFT", parts.tl, "TOPRIGHT")
+    parts.t:SetPoint("TOPRIGHT", parts.tr, "TOPLEFT")
+    parts.t:SetHeight(edgeSize)
+    parts.b:SetPoint("BOTTOMLEFT", parts.bl, "BOTTOMRIGHT")
+    parts.b:SetPoint("BOTTOMRIGHT", parts.br, "BOTTOMLEFT")
+    parts.b:SetHeight(edgeSize)
+    parts.l:SetPoint("TOPLEFT", parts.tl, "BOTTOMLEFT")
+    parts.l:SetPoint("BOTTOMLEFT", parts.bl, "TOPLEFT")
+    parts.l:SetWidth(edgeSize)
+    parts.r:SetPoint("TOPRIGHT", parts.tr, "BOTTOMRIGHT")
+    parts.r:SetPoint("BOTTOMRIGHT", parts.br, "TOPRIGHT")
+    parts.r:SetWidth(edgeSize)
 end
 
 function Carved:SetShown(shown)
-    for _, t in pairs(self.parts) do t:SetShown(shown and true or false) end
+    for _, texture in pairs(self.parts) do texture:SetShown(shown and true or false) end
 end
 
 function Carved:Textures()
@@ -237,31 +232,35 @@ end
 -- One of them
 ------------------------------------------------------------------------------
 
-function Borders.Show(parts, style, o)
-    o = o or {}
-    local size = o.size or 1
+-- One of a bar's borders shown, the others hidden. parts = { edges, stone, forever, carved } (any may
+-- be missing); style "pixel", "classic", "forever" or "carved".
+function Borders.Show(parts, style, opts)
+    opts = opts or {}
+    local size = opts.size or 1 -- the edges', in screen pixels; 0 hides them
     if parts.edges then
-        if style == "pixel" and size > 0 then parts.edges:Place(size, 0, o.color) end
+        if style == "pixel" and size > 0 then parts.edges:Place(size, 0, opts.color) end
         parts.edges:SetShown(style == "pixel" and size > 0)
     end
     if parts.stone then
-        if style == "classic" and o.stoneColor then Borders.ColorStone(parts.stone, o.stoneColor) end
+        if style == "classic" and opts.stoneColor then Borders.ColorStone(parts.stone, opts.stoneColor) end
         parts.stone:SetShown(style == "classic")
     end
     if parts.forever then
-        if style == "forever" then parts.forever:Place(o.thickness) end
+        if style == "forever" then parts.forever:Place(opts.thickness) end
         parts.forever:SetShown(style == "forever")
     end
     if parts.carved then
-        if style == "carved" then parts.carved:Place(o.thickness) end
+        if style == "carved" then parts.carved:Place(opts.thickness) end
         parts.carved:SetShown(style == "carved")
     end
 end
 
-function Borders.Reach(style, o, px)
-    o = o or {}
-    if style == "forever" then return FRAME_OUT * (o.thickness or 1) end
-    if style == "carved" then return CARVED_EDGE * (o.thickness or 1) end
-    if style == "classic" then return math.ceil(3 / px) end
-    return math.max(0, o.size or 1)
+-- How far that border reaches outside the bar, in screen pixels (pixel: one screen pixel in the bar's
+-- units, for the stone's 3 units).
+function Borders.Reach(style, opts, pixel)
+    opts = opts or {}
+    if style == "forever" then return FRAME_OUT * (opts.thickness or 1) end
+    if style == "carved" then return CARVED_EDGE * (opts.thickness or 1) end
+    if style == "classic" then return math.ceil(3 / pixel) end
+    return math.max(0, opts.size or 1)
 end

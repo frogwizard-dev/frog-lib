@@ -1,15 +1,7 @@
--- FrogLib Lines: lines drawn over the world map and the minimap, for routes (FrogRoute's).
---   local layer = FrogLib.Lines.New(key, { map = true, minimap = true })
---   layer:Set(lines)    lines = { { inst = continent, points = { north1, west1, north2, west2, ... },
---                                   r =, g =, b =, a =, width = (pixels), minimap = false (map only) } }
---                       (positions in UnitPosition's order); nil or {} clears them
---   layer:SetShown(on)
--- World map: on the map's canvas, so they pan and zoom with it (their width stays the same on
--- screen); worked out again when the map or its zoom changes. Minimap: around you, clipped to its
--- round (or square) edge, turned with it when it turns, a few times a second.
--- Also the minimap's sums, for pins:
---   FrogLib.Lines.MinimapScale() -> pixels per yard, radius (pixels), rotating, facing, square
---   FrogLib.Lines.MinimapPoint(dn, dw, scale, rotating, facing) -> x, y from the minimap's centre
+-- FrogLib Lines: lines drawn over the world map and the minimap, for routes (FrogRoute's). World map:
+-- on the map's canvas, so they pan and zoom with it (their width staying the same on screen), worked
+-- out again when the map or its zoom changes. Minimap: around you, clipped to its round (or square)
+-- edge, turned with it when it turns, a few times a second.
 
 local Lines = FrogLib:Module("Lines", 1)
 if not Lines then return end
@@ -18,72 +10,75 @@ local issecret = FrogLib.issecret
 
 -- The minimap's width in yards at each zoom level (0-5), outdoors and indoors (as HereBeDragons
 -- has them).
-Lines.YARDS = {
+local YARDS = {
     outdoor = { 466 + 2 / 3, 400, 333 + 1 / 3, 266 + 2 / 3, 200, 133 + 1 / 3 },
     indoor = { 300, 240, 180, 120, 80, 50 },
 }
 
-function Lines.MinimapScale()
+-- Pixels per yard, radius (pixels), whether it turns, your facing, whether it's square.
+local function MinimapScale()
     local zoom = Minimap:GetZoom() or 0
-    local yards = (IsIndoors and IsIndoors() and Lines.YARDS.indoor or Lines.YARDS.outdoor)[zoom + 1] or 400
-    local w = Minimap:GetWidth()
+    local yards = (IsIndoors and IsIndoors() and YARDS.indoor or YARDS.outdoor)[zoom + 1] or 400
+    local width = Minimap:GetWidth()
     local rotating = GetCVar("rotateMinimap") == "1"
     local facing = 0
     if rotating then
-        local f = GetPlayerFacing()
-        facing = (f and not issecret(f)) and f or 0
+        local playerFacing = GetPlayerFacing()
+        facing = (playerFacing and not issecret(playerFacing)) and playerFacing or 0
     end
     local square = GetMinimapShape and GetMinimapShape() == "SQUARE"
-    return w / yards, w / 2, rotating, facing, square
+    return width / yards, width / 2, rotating, facing, square
 end
 
--- Screen: west is left, north is up; turned with the minimap when it turns.
-function Lines.MinimapPoint(dn, dw, scale, rotating, facing)
-    local sx, sy = -dw * scale, dn * scale
+-- A place `north` and `west` of you, from the minimap's centre: west is left, north is up, turned
+-- with the minimap when it turns.
+local function MinimapPoint(north, west, scale, rotating, facing)
+    local x, y = -west * scale, north * scale
     if rotating then
-        local c, s = math.cos(facing), math.sin(facing)
-        sx, sy = sx * c + sy * s, -sx * s + sy * c
+        local cos, sin = math.cos(facing), math.sin(facing)
+        x, y = x * cos + y * sin, -x * sin + y * cos
     end
-    return sx, sy
+    return x, y
 end
 
--- The part of the segment (x1, y1)-(x2, y2) inside the circle of radius r (or the square), or nil.
-local function Clip(x1, y1, x2, y2, r, square)
-    local dx, dy = x2 - x1, y2 - y1
-    local t0, t1 = 0, 1
+-- The part of the segment (x1, y1)-(x2, y2) inside the circle of radius `radius` (or the square), or nil.
+local function Clip(x1, y1, x2, y2, radius, square)
+    local spanX, spanY = x2 - x1, y2 - y1
+    local enter, leave = 0, 1
     if square then
-        for _, e in ipairs({ { -dx, x1 + r }, { dx, r - x1 }, { -dy, y1 + r }, { dy, r - y1 } }) do
-            local p, q = e[1], e[2]
-            if p == 0 then
-                if q < 0 then return end
+        for _, side in ipairs({ { -spanX, x1 + radius }, { spanX, radius - x1 }, { -spanY, y1 + radius }, { spanY, radius - y1 } }) do
+            local toward, room = side[1], side[2]
+            if toward == 0 then
+                if room < 0 then return end
             else
-                local t = q / p
-                if p < 0 then
-                    if t > t1 then return end
-                    if t > t0 then t0 = t end
+                local crossing = room / toward
+                if toward < 0 then
+                    if crossing > leave then return end
+                    if crossing > enter then enter = crossing end
                 else
-                    if t < t0 then return end
-                    if t < t1 then t1 = t end
+                    if crossing < enter then return end
+                    if crossing < leave then leave = crossing end
                 end
             end
         end
     else
-        local a = dx * dx + dy * dy
-        local b = 2 * (x1 * dx + y1 * dy)
-        local c = x1 * x1 + y1 * y1 - r * r
-        if a == 0 then
-            if c > 0 then return end
+        -- Where the line meets the circle: the quadratic's two roots.
+        local squared = spanX * spanX + spanY * spanY
+        local linear = 2 * (x1 * spanX + y1 * spanY)
+        local constant = x1 * x1 + y1 * y1 - radius * radius
+        if squared == 0 then
+            if constant > 0 then return end
         else
-            local disc = b * b - 4 * a * c
-            if disc < 0 then return end
-            local s = math.sqrt(disc)
-            local ta, tb = (-b - s) / (2 * a), (-b + s) / (2 * a)
-            if ta > t0 then t0 = ta end
-            if tb < t1 then t1 = tb end
-            if t0 >= t1 then return end
+            local discriminant = linear * linear - 4 * squared * constant
+            if discriminant < 0 then return end
+            local root = math.sqrt(discriminant)
+            local first, second = (-linear - root) / (2 * squared), (-linear + root) / (2 * squared)
+            if first > enter then enter = first end
+            if second < leave then leave = second end
+            if enter >= leave then return end
         end
     end
-    return x1 + dx * t0, y1 + dy * t0, x1 + dx * t1, y1 + dy * t1
+    return x1 + spanX * enter, y1 + spanY * enter, x1 + spanX * leave, y1 + spanY * leave
 end
 
 local layers = {}
@@ -95,21 +90,17 @@ end
 
 local function Take(pool, level)
     pool.used = pool.used + 1
-    local l = pool.lines[pool.used]
-    if not l then
-        l = pool.parent:CreateLine(nil, "OVERLAY", nil, level or 0)
-        l:SetTexture("Interface\\Buttons\\WHITE8X8")
-        pool.lines[pool.used] = l
+    local line = pool.lines[pool.used]
+    if not line then
+        line = pool.parent:CreateLine(nil, "OVERLAY", nil, level or 0)
+        line:SetTexture("Interface\\Buttons\\WHITE8X8")
+        pool.lines[pool.used] = line
     end
-    l:Show()
-    return l
+    line:Show()
+    return line
 end
 
-local function Release(pool)
-    for i = pool.used + 1, #pool.lines do pool.lines[i]:Hide() end
-    pool.used = 0
-end
-
+-- Hides the lines past the ones used this time.
 local function Finish(pool)
     for i = pool.used + 1, #pool.lines do pool.lines[i]:Hide() end
 end
@@ -125,7 +116,10 @@ end
 function Methods:DrawMap()
     local canvas = Canvas()
     if not (canvas and self.mapShown and WorldMapFrame:IsShown()) then
-        if self.mapPool then Release(self.mapPool); Finish(self.mapPool) end
+        if self.mapPool then
+            self.mapPool.used = 0
+            Finish(self.mapPool)
+        end
         return
     end
     if not self.mapHolder then
@@ -137,24 +131,24 @@ function Methods:DrawMap()
     local pool = self.mapPool
     pool.used = 0
     local mapID = WorldMapFrame:GetMapID()
-    local W, H = canvas:GetWidth(), canvas:GetHeight()
+    local width, height = canvas:GetWidth(), canvas:GetHeight()
     local scale = WorldMapFrame.ScrollContainer.GetCanvasScale and WorldMapFrame.ScrollContainer:GetCanvasScale() or 1
-    if mapID and W > 0 and C_Map.GetMapPosFromWorldPos then
+    if mapID and width > 0 and C_Map.GetMapPosFromWorldPos then
         for _, line in ipairs(self.lines or {}) do
-            local pts = line.points
-            local prevU, prevV
-            for i = 1, #pts - 1, 2 do
-                local _, pos = C_Map.GetMapPosFromWorldPos(line.inst, CreateVector2D(pts[i], pts[i + 1]), mapID)
+            local points = line.points
+            local lastU, lastV
+            for i = 1, #points - 1, 2 do
+                local _, position = C_Map.GetMapPosFromWorldPos(line.inst, CreateVector2D(points[i], points[i + 1]), mapID)
                 local u, v
-                if pos then u, v = pos:GetXY() end
-                if u and prevU then
-                    local l = Take(pool)
-                    l:SetThickness((line.width or 4) / scale)
-                    l:SetVertexColor(line.r or 1, line.g or 0.2, line.b or 0.2, line.a or 0.9)
-                    l:SetStartPoint("TOPLEFT", canvas, prevU * W, -prevV * H)
-                    l:SetEndPoint("TOPLEFT", canvas, u * W, -v * H)
+                if position then u, v = position:GetXY() end
+                if u and lastU then
+                    local drawn = Take(pool)
+                    drawn:SetThickness((line.width or 4) / scale)
+                    drawn:SetVertexColor(line.r or 1, line.g or 0.2, line.b or 0.2, line.a or 0.9)
+                    drawn:SetStartPoint("TOPLEFT", canvas, lastU * width, -lastV * height)
+                    drawn:SetEndPoint("TOPLEFT", canvas, u * width, -v * height)
                 end
-                prevU, prevV = u, v
+                lastU, lastV = u, v
             end
         end
     end
@@ -164,13 +158,13 @@ end
 local function HookMap()
     if mapHooked or not WorldMapFrame then return end
     mapHooked = true
-    local function redraw()
+    local function Redraw()
         for _, layer in pairs(layers) do layer:DrawMap() end
     end
-    hooksecurefunc(WorldMapFrame, "OnMapChanged", redraw)
-    if WorldMapFrame.OnCanvasScaleChanged then hooksecurefunc(WorldMapFrame, "OnCanvasScaleChanged", redraw) end
-    WorldMapFrame:HookScript("OnShow", redraw)
-    if WorldMapFrame.ScrollContainer then WorldMapFrame.ScrollContainer:HookScript("OnSizeChanged", redraw) end
+    hooksecurefunc(WorldMapFrame, "OnMapChanged", Redraw)
+    if WorldMapFrame.OnCanvasScaleChanged then hooksecurefunc(WorldMapFrame, "OnCanvasScaleChanged", Redraw) end
+    WorldMapFrame:HookScript("OnShow", Redraw)
+    if WorldMapFrame.ScrollContainer then WorldMapFrame.ScrollContainer:HookScript("OnSizeChanged", Redraw) end
 end
 
 -- Minimap --------------------------------------------------------------------------------------
@@ -178,14 +172,14 @@ end
 function Methods:DrawMinimap()
     if not Minimap then return end
     if not self.mmHolder then
-        local h = CreateFrame("Frame", nil, Minimap)
-        h:SetAllPoints()
-        h:SetFrameLevel(Minimap:GetFrameLevel() + 4)
-        self.mmHolder = h
-        self.mmPool = Pool(h)
+        local holder = CreateFrame("Frame", nil, Minimap)
+        holder:SetAllPoints()
+        holder:SetFrameLevel(Minimap:GetFrameLevel() + 4)
+        self.mmHolder = holder
+        self.mmPool = Pool(holder)
         local elapsed = 0
-        h:SetScript("OnUpdate", function(_, dt)
-            elapsed = elapsed + dt
+        holder:SetScript("OnUpdate", function(_, sinceLast)
+            elapsed = elapsed + sinceLast
             if elapsed < 0.05 then return end
             elapsed = 0
             self:DrawMinimapNow()
@@ -197,27 +191,28 @@ end
 function Methods:DrawMinimapNow()
     local pool = self.mmPool
     pool.used = 0
-    local north, west, _, inst = UnitPosition("player")
+    local north, west, _, instance = UnitPosition("player")
     if north and not issecret(north) then
-        local scale, radius, rotating, facing, square = Lines.MinimapScale()
-        local r = radius - 2
-        local reach = r / scale * 1.5   -- yards: segments further off than this are skipped
+        local scale, radius, rotating, facing, square = MinimapScale()
+        local edge = radius - 2
+        local reach = edge / scale * 1.5 -- yards: segments further off than this are skipped
         for _, line in ipairs(self.lines or {}) do
-            if line.inst == inst and line.minimap ~= false then
-                local pts = line.points
-                for i = 1, #pts - 3, 2 do
-                    local n1, w1, n2, w2 = pts[i] - north, pts[i + 1] - west, pts[i + 2] - north, pts[i + 3] - west
-                    if not ((n1 > reach and n2 > reach) or (n1 < -reach and n2 < -reach)
-                        or (w1 > reach and w2 > reach) or (w1 < -reach and w2 < -reach)) then
-                        local x1, y1 = Lines.MinimapPoint(n1, w1, scale, rotating, facing)
-                        local x2, y2 = Lines.MinimapPoint(n2, w2, scale, rotating, facing)
-                        local a, b, c, d = Clip(x1, y1, x2, y2, r, square)
-                        if a then
-                            local l = Take(pool)
-                            l:SetThickness(line.mmWidth or 3)
-                            l:SetVertexColor(line.r or 1, line.g or 0.2, line.b or 0.2, line.a or 0.9)
-                            l:SetStartPoint("CENTER", Minimap, a, b)
-                            l:SetEndPoint("CENTER", Minimap, c, d)
+            if line.inst == instance and line.minimap ~= false then
+                local points = line.points
+                for i = 1, #points - 3, 2 do
+                    local north1, west1 = points[i] - north, points[i + 1] - west
+                    local north2, west2 = points[i + 2] - north, points[i + 3] - west
+                    if not ((north1 > reach and north2 > reach) or (north1 < -reach and north2 < -reach)
+                        or (west1 > reach and west2 > reach) or (west1 < -reach and west2 < -reach)) then
+                        local x1, y1 = MinimapPoint(north1, west1, scale, rotating, facing)
+                        local x2, y2 = MinimapPoint(north2, west2, scale, rotating, facing)
+                        local startX, startY, endX, endY = Clip(x1, y1, x2, y2, edge, square)
+                        if startX then
+                            local drawn = Take(pool)
+                            drawn:SetThickness(line.mmWidth or 3)
+                            drawn:SetVertexColor(line.r or 1, line.g or 0.2, line.b or 0.2, line.a or 0.9)
+                            drawn:SetStartPoint("CENTER", Minimap, startX, startY)
+                            drawn:SetEndPoint("CENTER", Minimap, endX, endY)
                         end
                     end
                 end
@@ -229,6 +224,8 @@ end
 
 -- Layers ---------------------------------------------------------------------------------------
 
+-- lines = { { inst = continent, points = { north1, west1, north2, west2, ... }, r, g, b, a, width
+-- (pixels), minimap = false (map only) } }, in UnitPosition's order; nil or {} clears them.
 function Methods:Set(lines)
     self.lines = lines
     HookMap()
@@ -243,6 +240,7 @@ function Methods:SetShown(on)
     self:DrawMinimap()
 end
 
+-- opts = { map = true, minimap = true }: where it draws.
 function Lines.New(key, opts)
     if layers[key] then return layers[key] end
     opts = opts or {}
@@ -253,9 +251,9 @@ function Lines.New(key, opts)
 end
 
 -- The world map can load after the addons that use this.
-local ev = CreateFrame("Frame")
-ev:RegisterEvent("ADDON_LOADED")
-ev:RegisterEvent("PLAYER_LOGIN")
-ev:SetScript("OnEvent", function()
+local loader = CreateFrame("Frame")
+loader:RegisterEvent("ADDON_LOADED")
+loader:RegisterEvent("PLAYER_LOGIN")
+loader:SetScript("OnEvent", function()
     if WorldMapFrame and next(layers) then HookMap() end
 end)
