@@ -1,8 +1,8 @@
--- FrogLib Media: the bar textures and fonts the settings offer, and setting a font safely. An
--- addon's own fonts are listed as "Bundled"; then Frog, the game's own, EllesmereUI's and anything
--- shared through LibSharedMedia. Built fresh each time, so late additions show up.
+-- FrogLib Media: the bar textures and fonts the settings offer, and setting a font safely, with the
+-- letters the client's language needs. An addon's own fonts are listed as "Bundled"; then Frog, the
+-- game's own, EllesmereUI's and anything shared through LibSharedMedia, built fresh each time.
 
-local Media = FrogLib:Module("Media", 3) -- 2: Usable; 3: the "SHADOW" outline
+local Media = FrogLib:Module("Media", 4) -- 2: Usable; 3: the "SHADOW" outline; 4: ForClient
 if not Media then return end
 
 local GROUPS = { "Bundled", "Frog", "Blizzard", "EllesmereUI", "Shared media" }
@@ -119,11 +119,49 @@ function Media.Usable(path)
     return type(path) == "string" and not FromMissingAddOn(path)
 end
 
+-- What known fonts draw past the Latin alphabet, by file name (measured from the files). A font drawn
+-- with a letter it lacks shows nothing there, so a Russian name in Michroma is blank.
+local KNOWN = {
+    ["frizqt__.ttf"] = { twin = "Fonts\\FRIZQT___CYR.TTF" }, -- the game's faces each have a Cyrillic twin
+    ["morpheus.ttf"] = { twin = "Fonts\\MORPHEUS_CYR.TTF" },
+    ["skurri.ttf"] = { twin = "Fonts\\SKURRI_CYR.TTF" },
+    ["frizqt___cyr.ttf"] = { cyrillic = true },
+    ["morpheus_cyr.ttf"] = { cyrillic = true },
+    ["skurri_cyr.ttf"] = { cyrillic = true },
+    ["arialn.ttf"] = { cyrillic = true },
+    ["michroma.ttf"] = {},
+    ["sourcesans3.ttf"] = { cyrillic = true },
+    ["xiv.ttf"] = { cyrillic = true }, -- M PLUS 1p: some Chinese, too little to rely on
+    ["expressway.ttf"] = { cyrillic = true }, -- EllesmereUI's
+    ["expressway bold.ttf"] = { cyrillic = true },
+}
+local SCRIPT = ({ ruRU = "cyrillic", koKR = "korean", zhCN = "chinese", zhTW = "chinese" })[GetLocale()]
+
+-- Whether the font has this client's letters (one not listed, a player's own pick, is trusted).
+local function Draws(path)
+    local known = KNOWN[(path:match("[^\\/]+$") or path):lower()]
+    return not known or known[SCRIPT] == true, known
+end
+
+-- The font to draw with on this client: path, or one with its language's letters (the game face's
+-- Cyrillic twin, else fallback if it has them, else the game's own font for that language).
+function Media.ForClient(path, fallback)
+    if not SCRIPT or type(path) ~= "string" then return path end
+    local draws, known = Draws(path)
+    if draws then return path end
+    if known.twin and SCRIPT == "cyrillic" then return known.twin end
+    if type(fallback) == "string" and Draws(fallback) then return fallback end
+    return STANDARD_TEXT_FONT
+end
+
 -- outline: the game's ("", "OUTLINE", "THICKOUTLINE"...) or "SHADOW", a drop shadow instead. A font
 -- file WoW hasn't finished loading can be refused at first, so it's retried; the fallback shows till then.
 function Instance:SetFont(fontString, path, size, outline)
     if not fontString then return end
-    local wanted = path .. "|" .. size .. "|" .. (outline or "")
+    local wanted = path .. "|" .. size .. "|" .. (outline or "") -- what was asked for (StatSheet reads it)
+    local fallback = self.opts.fallbackFont
+    path = Media.ForClient(path, fallback)
+    fallback = Media.ForClient(fallback)
     -- Taken off again when another outline is chosen (an addon's own shadow, set without it, is
     -- left alone).
     local shadow = outline == "SHADOW"
@@ -145,7 +183,6 @@ function Instance:SetFont(fontString, path, size, outline)
     local ok, set = false, false
     if usable then ok, set = pcall(fontString.SetFont, fontString, path, size, outline) end
     if not (ok and set) then
-        local fallback = self.opts.fallbackFont
         if not (fallback and fontString:SetFont(fallback, size, outline)) then
             fontString:SetFont(STANDARD_TEXT_FONT, size, outline)
         end
