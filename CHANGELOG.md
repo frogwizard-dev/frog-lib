@@ -1,5 +1,10 @@
 # FrogLib
 
+## 1.9.0
+
+- Predict: heal prediction on a health bar, as Blizzard's frames draw it: your incoming heals, everyone else's and shields, one after the other past the health. FrogFrames', now shared.
+- Gauge: incoming heals on the FFXIV gauges (XIVPlayer's HP gauge), in Blizzard's teal, with the shield starting where they end.
+
 ## 1.8.0
 
 - Tank: `ReplacedEach` gives every way an item could go in. A ring or trinket, with both worn, is compared with each one.

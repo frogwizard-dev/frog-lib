@@ -18,6 +18,7 @@
 	<Script file="Icons.lua"/>
 	<Script file="Plates.lua"/>
 	<Script file="Secure.lua"/>
+	<Script file="Predict.lua"/>
 	<Script file="Gauge.lua"/>
 	<Script file="Grid.lua"/>
 	<Script file="Sheet.lua"/>

@@ -1,5 +1,4 @@
--- FrogLib Lines: lines drawn over the world map and the minimap, for routes (FrogRoute's, and
--- FrogGuide's through it).
+-- FrogLib Lines: lines drawn over the world map and the minimap, for routes (FrogRoute's).
 --   local layer = FrogLib.Lines.New(key, { map = true, minimap = true })
 --   layer:Set(lines)    lines = { { inst = continent, points = { north1, west1, north2, west2, ... },
 --                                   r =, g =, b =, a =, width = (pixels), minimap = false (map only) } }
@@ -8,7 +7,7 @@
 -- World map: on the map's canvas, so they pan and zoom with it (their width stays the same on
 -- screen); worked out again when the map or its zoom changes. Minimap: around you, clipped to its
 -- round (or square) edge, turned with it when it turns, a few times a second.
--- Also the minimap's sums, for pins (FrogGuide's):
+-- Also the minimap's sums, for pins:
 --   FrogLib.Lines.MinimapScale() -> pixels per yard, radius (pixels), rotating, facing, square
 --   FrogLib.Lines.MinimapPoint(dn, dw, scale, rotating, facing) -> x, y from the minimap's centre
 

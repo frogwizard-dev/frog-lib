@@ -12,9 +12,11 @@
 --   g:SetAbsorbColor(r, g, b). FrogLib.Gauge.Absorb holds just these, for another addon's own
 --   bars (FrogTarget's): they need .bar, a StatusBar, and AnchorAbsorb() run again whenever its
 --   fill texture is replaced.
+--   Incoming heals (FrogLib.Predict's bars, yours and others'): g:EnableHeal() once, then
+--   g:UpdateHeal(unit, instant), g:ShowHeal(shown), g:SetHealColor(r, g, b).
 -- Gauges keep their methods in this part's tables, so a newer copy's apply to them.
 
-local Gauge = FrogLib:Module("Gauge", 1)
+local Gauge = FrogLib:Module("Gauge", 2) -- 2: incoming heals
 if not Gauge then return end
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -143,6 +145,7 @@ function M:Anchor()
     self.sheen:ClearAllPoints()
     self.sheen:SetPoint("TOPLEFT", fill, "TOPLEFT")
     self.sheen:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
+    if self.heal then self.heal:Anchor() end
     if self.absorb then self:AnchorAbsorb() end
 end
 
@@ -215,7 +218,9 @@ end
 -- The fill's round ends use a thin slice of the same texture, so a shaded or glossy bar
 -- texture carries its vertical shading into the curve.
 function M:SetTexture(path)
+    self.texture = path
     self.bar:SetStatusBarTexture(path)
+    if self.heal then self.heal:SetTexture(path) end
     for _, cap in ipairs({ self.startCap, self.endCap }) do
         if not cap:SetTexture(path) then cap:SetTexture(WHITE) end
         cap:SetTexCoord(0, 0.02, 0, 1)
@@ -250,11 +255,14 @@ end
 -- Absorb shields (optional: EnableAbsorb once, then SetAbsorb)
 ------------------------------------------------------------------------------
 
--- A shield fills the missing part of the gauge from the fill's edge, and whatever doesn't fit
+-- A shield fills the missing part of the gauge from the fill's edge (or from the end of the
+-- incoming heals, when those are shown, as Blizzard's frames draw it), and whatever doesn't fit
 -- there is laid over the right end of the fill (so a shield at full health still shows). The
 -- amount can be secret, so the split is done by clipping, never arithmetic:
 --   ahead: a bar starting at the fill's edge, clipped to the missing part -> min(shield, missing)
 --   over:  a right-to-left bar across the gauge, clipped to the fill      -> max(0, shield - missing)
+-- (With heals in the way, "over" can't know how much of the shield they pushed past the end, so
+-- that part only shows once the heals land.)
 local SHIELD_STRIPES = "Interface\\RaidFrame\\Shield-Overlay" -- Blizzard's diagonal shield stripes
 
 local function ShieldBar(parent)
@@ -297,12 +305,14 @@ function A:AnchorAbsorb()
     local a = self.absorb
     if not a then return end
     local bar, fill = self.bar, self.bar:GetStatusBarTexture()
+    local h = self.heal
+    local edge = (h and h.shown) and h:End() or fill
     a.missClip:ClearAllPoints()
     a.missClip:SetPoint("TOPLEFT", fill, "TOPRIGHT")
     a.missClip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
     a.ahead:ClearAllPoints()
-    a.ahead:SetPoint("TOPLEFT", fill, "TOPRIGHT")
-    a.ahead:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT")
+    a.ahead:SetPoint("TOPLEFT", edge, "TOPRIGHT")
+    a.ahead:SetPoint("BOTTOMLEFT", edge, "BOTTOMRIGHT")
     a.fillClip:ClearAllPoints()
     a.fillClip:SetPoint("TOPLEFT", bar, "TOPLEFT")
     a.fillClip:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
@@ -332,6 +342,43 @@ function A:ShowAbsorb(shown)
     if not a then return end
     a.missClip:SetShown(shown)
     a.fillClip:SetShown(shown)
+end
+
+------------------------------------------------------------------------------
+-- Incoming heals (optional: EnableHeal once, then UpdateHeal)
+------------------------------------------------------------------------------
+
+-- FrogLib.Predict's bars from the fill's edge, under any shield (which starts where they end):
+-- your heals on their way, then everyone else's, in Blizzard's teal (its own frames' colour, yours
+-- a touch stronger). They ease like the fill, so as a heal lands the fill grows into it.
+local HEAL_COLOR = { 0.0, 0.659, 0.608 } -- Blizzard's HEAL_PREDICTION_COLOR
+local HEAL_ALPHA = { mine = 0.8, others = 0.6 }
+
+function M:EnableHeal()
+    if self.heal then return end
+    self.heal = FrogLib.Predict.New(self.bar, { parts = { "mine", "others" }, ease = true, level = 1 })
+    if self.texture then self.heal:SetTexture(self.texture) end
+    self:SetHealColor(unpack(HEAL_COLOR))
+    if self.absorb then self:AnchorAbsorb() end
+end
+
+function M:UpdateHeal(unit, instant)
+    if self.heal then self.heal:Update(unit, instant) end
+end
+
+function M:ShowHeal(shown)
+    local h = self.heal
+    if not h then return end
+    shown = shown and true or false
+    if h.shown == shown then return end
+    h:SetShown(shown)
+    if self.absorb then self:AnchorAbsorb() end
+end
+
+function M:SetHealColor(r, g, b)
+    local h = self.heal
+    if not h then return end
+    for key, a in pairs(HEAL_ALPHA) do h:SetColor(key, r, g, b, a) end
 end
 
 for k, fn in pairs(A) do M[k] = fn end

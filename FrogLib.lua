@@ -18,8 +18,8 @@
 -- curves the game reads a secret health or power through), Idle (fade when idle), Swing (swing
 -- timers), Cast (reading casts, and when a cast bar shows), FSR (the five-second rule), Text (text
 -- templates), Color (class, reaction and power colours), Unit (names, levels, percentages and the
--- template words for a unit), Icons (raid marks and the icons by a name) and Secure (click-to-target
--- buttons with the unit menu on right-click).
+-- template words for a unit), Icons (raid marks and the icons by a name), Secure (click-to-target
+-- buttons with the unit menu on right-click) and Predict (heal prediction on a health bar).
 
 local MINOR = 2 -- 2: PixelSnap (1 shipped in the first releases of the addons)
 

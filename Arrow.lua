@@ -1,6 +1,6 @@
 -- FrogLib Arrow: a waypoint arrow (Media\Arrow.tga) that turns to point at a place, green when
 -- it's ahead, through yellow to red when it's behind you, with a line of text under it (how far)
--- and a smaller one (what's there). Drag it to move it. FrogGuide's and FrogRoute's.
+-- and a smaller one (what's there). Drag it to move it. FrogRoute's.
 --   local arrow = FrogLib.Arrow.New(name, opts)
 --       opts.point() -> { x, y } (its saved centre, UIParent pixels) or nil (default: above centre)
 --       opts.save({ x, y })        where it was dragged to
