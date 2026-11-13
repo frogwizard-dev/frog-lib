@@ -1,5 +1,9 @@
 # FrogLib
 
+## 1.10.1
+
+- Fonts on Russian, Korean and Chinese clients: a font without that language's letters (Michroma, or the game's Latin-only Friz Quadrata, Morpheus and Skurri) drew names in it blank. It's swapped for one that has them as it's drawn: the game face's Cyrillic version, the addon's own fallback font, or the game's font for that language. Your font settings stay as they are.
+
 ## 1.10.0
 
 - UI: every settings control can take a settings table and the setting's name in place of its get and set functions: `UI.Checkbox(page, "Text", db, "key")`. A colour swatch set up this way changes the colour in place.
@@ -9,7 +13,6 @@
 - Borders: `NineSlice`, eight textures laid out round a region as a nine-slice of any art (the Forever frame's, FrogFrames' bevel and glow).
 - Cast: `NewLine`, the cast line the target and unit frames draw (gold, grey when it can't be interrupted, held in red when it's interrupted, a sample while unlocked), written once for the four that each had their own.
 - Secure: `Watch(button, active)` shows a click button while its unit exists, or keeps it hidden.
-- Fonts on Russian, Korean and Chinese clients: a font without that language's letters (Michroma, or the game's Latin-only Friz Quadrata, Morpheus and Skurri) drew names in it blank. It's swapped for one that has them as it's drawn: the game face's Cyrillic version, the addon's own fallback font, or the game's font for that language. Your font settings stay as they are.
 - Under the hood: clearer names and shorter notes throughout. Nothing else works differently.
 
 ## 1.9.0
