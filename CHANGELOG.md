@@ -5,6 +5,7 @@
 - MinimapView: where a place in the world falls on the minimap (its scale, your place, the turn of a rotating minimap), for anything drawn over it. Lines' routes (FrogRoute) use it, and so does FrogTotems' totem areas. The scale now comes from the game's own minimap reach where it has one, rather than a table of zoom levels, so routes line up with the minimap at every zoom, indoors too.
 - ButtonSkin: FrogUI's button looks (rounded like the cooldown manager, square, or Classic's 1.x slots, in a border of any thickness and colour) for any button or icon, so FrogTotems' timers can wear them too.
 - Util: `Knows(spellID)`, whether the character has a spell (learned, talents and passives too, or in its spellbook), for the add-ons that each had their own.
+- Tank: weapon skill past your level's cap (racials, Edgemaster's Handguards) now lowers your chance to miss, following the curve of Forever's own hit table: a 305 sword against a raid boss misses 5.4% of the time, not 9%. `Tank.MissChance` and `Tank.SkillOver` are new.
 - Tank: a druid in Cat Form makes 71% threat, as rogues do; the threat multiplier (StatSheet, FrogProt) counts it.
 - Nameplates (FrogPlates, XIVPlates): the spell's name on an enemy's cast bar is crisp. Blizzard draws it scaling smoothly with the plate, at in-between pixel sizes, which smeared it into a blurry, too-bold look next to the sharp cast time. It snaps to whole sizes now, like the rest of the plate's text.
 

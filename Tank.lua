@@ -3,7 +3,7 @@
 -- values the game keeps secret (in combat) raise "unreadable" through Tank.N: call in pcall. `over`:
 -- an enemy's level above yours; `level`: yours (UnitLevel by default); what-if tables take made-up numbers.
 
-local Tank = FrogLib:Module("Tank", 4) -- 3: Shares; 4: spells known through Util.Knows
+local Tank = FrogLib:Module("Tank", 5) -- 3: Shares; 4: spells known through Util.Knows; 5: MissChance, skill over the cap
 if not Tank then return end
 
 local issecret = FrogLib.issecret
@@ -196,14 +196,33 @@ local function SkillShort(skill, level)
 end
 Tank.SkillShort = SkillShort
 
+-- Weapon skill past your level's cap (racials, Edgemaster's, gear).
+local function SkillOver(skill, level)
+    return math.max(0, skill - Level(level) * SKILL_PER_LEVEL)
+end
+Tank.SkillOver = SkillOver
+
+-- Your chance to miss an enemy `over` levels up with `skill`, single-wielding. Up to the cap,
+-- Forever's table plus 0.04% a point short. Past it, the gap to the enemy's defense shrinks, along
+-- the same curve the table follows: 0.04% a point while the gap is 10 or less, and the steep part
+-- (0.2% a point, plus 1%) past 10, which is how a boss 15 points up gets to 9%.
+function Tank.MissChance(over, skill, level)
+    level = Level(level)
+    if SkillOver(skill, level) == 0 then return MELEE_MISS[over] + SkillShort(skill, level) * 0.04 end
+    local gap = (level + over) * SKILL_PER_LEVEL - skill
+    if gap > 10 then return 6 + gap * 0.2 end
+    return math.max(0, 5 + gap * 0.04)
+end
+
 -- The hit chance that means never missing an enemy `over` levels up. whatIf = { skill, dualWield, level }.
+-- Dual wielding adds 19% to white hits (Classic 1.12's rule).
 function Tank.HitNeeded(over, whatIf)
     whatIf = whatIf or {}
     local level = Level(whatIf.level)
     local skill = whatIf.skill or Tank.WeaponSkill(INVSLOT_MAINHAND or 16) or level * SKILL_PER_LEVEL
     local dualWield = whatIf.dualWield
     if dualWield == nil then dualWield = select(2, UnitAttackSpeed("player")) and true or false end
-    return MELEE_MISS[over] + SkillShort(skill, level) * 0.04 + (dualWield and 19 or 0)
+    return Tank.MissChance(over, skill, level) + (dualWield and 19 or 0)
 end
 
 ------------------------------------------------------------------------------
