@@ -3,7 +3,7 @@
 -- values the game keeps secret (in combat) raise "unreadable" through Tank.N: call in pcall. `over`:
 -- an enemy's level above yours; `level`: yours (UnitLevel by default); what-if tables take made-up numbers.
 
-local Tank = FrogLib:Module("Tank", 3) -- 3: Shares
+local Tank = FrogLib:Module("Tank", 4) -- 3: Shares; 4: spells known through Util.Knows
 if not Tank then return end
 
 local issecret = FrogLib.issecret
@@ -212,11 +212,9 @@ end
 
 -- Any of these spells known (a talent's ranks, or a spell's).
 local function KnowsRank(spellIDs)
-    local known = IsPlayerSpell or IsSpellKnown
-    if not known then return 0 end
     local best = 0
     for rank, spellID in ipairs(spellIDs) do
-        if known(spellID) then best = rank end
+        if FrogLib.Util.Knows(spellID) then best = rank end
     end
     return best
 end
@@ -241,6 +239,7 @@ end
 
 local WARRIOR_STANCES = { [71] = { 1.3, "Defensive Stance" }, [2457] = { 0.8, "Battle Stance" }, [2458] = { 0.8, "Berserker Stance" } }
 local BEAR = { [5487] = true, [9634] = true }
+local CAT = 768
 local DEFIANCE = { 12303, 12788, 12789, 12791, 12792 }
 local FERAL_INSTINCT = { 16947, 16948, 16949, 16950, 16951 }
 local IMPROVED_FURY = { 20468, 20469, 20470 }
@@ -264,6 +263,8 @@ function Tank.Threat()
             Add("Bear Form", 1.3)
             local rank = KnowsRank(FERAL_INSTINCT)
             if rank > 0 then Add("Feral Instinct", 1 + 0.03 * rank) end
+        elseif FormSpell() == CAT then
+            Add("Cat Form", 0.71)
         end
     elseif class == "ROGUE" then
         Add("Rogues", 0.71)

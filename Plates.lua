@@ -3,7 +3,7 @@
 -- fill each in. Blizzard's plate works on underneath, see-through (clicks hit-test its health bar),
 -- its cast bar and auras showing through round the skin's bar, as its code copes with secret values.
 
-local Plates = FrogLib:Module("Plates", 1)
+local Plates = FrogLib:Module("Plates", 2) -- 2: crisp cast bar spell names
 if not Plates then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -95,23 +95,13 @@ local EXECUTES = {
     PALADIN = { spells = { 24275, 24274, 24239 }, below = 0.2 },
 }
 
-local function Knows(spellID)
-    for _, check in ipairs({ C_SpellBook and C_SpellBook.IsSpellKnown, IsPlayerSpell, IsSpellKnown }) do
-        if check then
-            local ok, known = pcall(check, spellID)
-            if ok and Safe(known) == true then return true end
-        end
-    end
-    return false
-end
-
 function Plates.ExecuteCheck()
     local _, class = UnitClass("player")
     local execute = EXECUTES[class]
     local usable = false
     if execute then
         for _, spellID in ipairs(execute.spells) do
-            if Knows(spellID) then
+            if FrogLib.Util.Knows(spellID) then
                 usable = true
                 break
             end
@@ -392,8 +382,11 @@ local function SeeThrough(unitFrame, on)
     unitFrame:SetAlpha(on and 0 or 1)
     state.busy = false
     if unitFrame.selectionHighlight then unitFrame.selectionHighlight:SetAlpha(on and 0 or 0.25) end
-    if on then return end
     local cast = Plates.BlizzardCast(unitFrame)
+    -- Blizzard's spell name scales smoothly with the plate, drawn at in-between pixel sizes, which
+    -- smears it; while the plate is ours it snaps to whole sizes like the skin's own text.
+    if cast and cast.Text and cast.Text.SetSmoothScaling then cast.Text:SetSmoothScaling(not on) end
+    if on then return end
     if cast then
         cast:SetIgnoreParentAlpha(false)
         if cast.BorderShield then cast.BorderShield:SetAlpha(1) end

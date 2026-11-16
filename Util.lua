@@ -1,7 +1,27 @@
 -- FrogLib Util: small things every addon needs.
 
-local Util = FrogLib:Module("Util", 1)
+local Util = FrogLib:Module("Util", 2) -- 2: Knows
 if not Util then return end
+
+local BANK = Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player
+
+-- Whether the character has a spell: learned (talents and passives too) or in its spellbook.
+function Util.Knows(spellID)
+    local book = C_SpellBook
+    local checks = {
+        { IsPlayerSpell },
+        { book and book.IsSpellKnown, BANK },
+        { book and book.IsSpellInSpellBook, BANK, false },
+        { IsSpellKnown },
+    }
+    for _, check in ipairs(checks) do
+        if check[1] then
+            local ok, known = pcall(check[1], spellID, check[2], check[3])
+            if ok and not FrogLib.issecret(known) and known == true then return true end
+        end
+    end
+    return false
+end
 
 -- Fills in what saved settings are missing from the defaults, into nested tables too; what's
 -- already set is kept.

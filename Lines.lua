@@ -3,43 +3,8 @@
 -- out again when the map or its zoom changes. Minimap: around you, clipped to its round (or square)
 -- edge, turned with it when it turns, a few times a second.
 
-local Lines = FrogLib:Module("Lines", 1)
+local Lines = FrogLib:Module("Lines", 2) -- 2: the minimap's scale from FrogLib's MinimapView
 if not Lines then return end
-
-local issecret = FrogLib.issecret
-
--- The minimap's width in yards at each zoom level (0-5), outdoors and indoors (as HereBeDragons
--- has them).
-local YARDS = {
-    outdoor = { 466 + 2 / 3, 400, 333 + 1 / 3, 266 + 2 / 3, 200, 133 + 1 / 3 },
-    indoor = { 300, 240, 180, 120, 80, 50 },
-}
-
--- Pixels per yard, radius (pixels), whether it turns, your facing, whether it's square.
-local function MinimapScale()
-    local zoom = Minimap:GetZoom() or 0
-    local yards = (IsIndoors and IsIndoors() and YARDS.indoor or YARDS.outdoor)[zoom + 1] or 400
-    local width = Minimap:GetWidth()
-    local rotating = GetCVar("rotateMinimap") == "1"
-    local facing = 0
-    if rotating then
-        local playerFacing = GetPlayerFacing()
-        facing = (playerFacing and not issecret(playerFacing)) and playerFacing or 0
-    end
-    local square = GetMinimapShape and GetMinimapShape() == "SQUARE"
-    return width / yards, width / 2, rotating, facing, square
-end
-
--- A place `north` and `west` of you, from the minimap's centre: west is left, north is up, turned
--- with the minimap when it turns.
-local function MinimapPoint(north, west, scale, rotating, facing)
-    local x, y = -west * scale, north * scale
-    if rotating then
-        local cos, sin = math.cos(facing), math.sin(facing)
-        x, y = x * cos + y * sin, -x * sin + y * cos
-    end
-    return x, y
-end
 
 -- The part of the segment (x1, y1)-(x2, y2) inside the circle of radius `radius` (or the square), or nil.
 local function Clip(x1, y1, x2, y2, radius, square)
@@ -191,9 +156,10 @@ end
 function Methods:DrawMinimapNow()
     local pool = self.mmPool
     pool.used = 0
-    local north, west, _, instance = UnitPosition("player")
-    if north and not issecret(north) then
-        local scale, radius, rotating, facing, square = MinimapScale()
+    local View = FrogLib.MinimapView
+    local north, west, instance = View.Player()
+    if north then
+        local scale, radius, rotating, facing, square = View.Read()
         local edge = radius - 2
         local reach = edge / scale * 1.5 -- yards: segments further off than this are skipped
         for _, line in ipairs(self.lines or {}) do
@@ -204,8 +170,8 @@ function Methods:DrawMinimapNow()
                     local north2, west2 = points[i + 2] - north, points[i + 3] - west
                     if not ((north1 > reach and north2 > reach) or (north1 < -reach and north2 < -reach)
                         or (west1 > reach and west2 > reach) or (west1 < -reach and west2 < -reach)) then
-                        local x1, y1 = MinimapPoint(north1, west1, scale, rotating, facing)
-                        local x2, y2 = MinimapPoint(north2, west2, scale, rotating, facing)
+                        local x1, y1 = View.Offset(north1, west1, scale, rotating, facing)
+                        local x2, y2 = View.Offset(north2, west2, scale, rotating, facing)
                         local startX, startY, endX, endY = Clip(x1, y1, x2, y2, edge, square)
                         if startX then
                             local drawn = Take(pool)
