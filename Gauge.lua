@@ -3,7 +3,7 @@
 -- "framed", a capsule in a gold rim with a dark track and a glossy fill (the classic HP/MP/TP bar).
 -- Both have round ends. Gauges keep their methods in this part's tables, so a newer copy's apply.
 
-local Gauge = FrogLib:Module("Gauge", 2) -- 2: incoming heals
+local Gauge = FrogLib:Module("Gauge", 3) -- 2: incoming heals; 3: an unchanged colour isn't painted again
 if not Gauge then return end
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -15,6 +15,12 @@ local IMMEDIATE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Im
 local GOLD_TOP = { 0.92, 0.80, 0.50 }
 local GOLD_BOTTOM = { 0.66, 0.51, 0.27 }
 local RIM = 2 -- gold rim thickness in the framed style
+-- Parts by key, so the loops over them make no new tables.
+local RIM_PARTS = { "rim", "rimL", "rimR" }
+local LINE_PARTS = { "glowTop", "glowBottom", "spark" }
+local SHEENS = { "sheen", "sheenL", "sheenR" }
+local CAPS = { "startCap", "endCap" }
+local SHIELDS = { "ahead", "over" }
 
 Gauge.Methods = Gauge.Methods or {}
 local Methods = Gauge.Methods
@@ -115,11 +121,20 @@ function Gauge.New(parent)
     return gauge
 end
 
+-- Its colour painted again, changed or not: the style and height decide how it's drawn, and a new
+-- fill texture may not carry the old one's.
+local function Repaint(gauge)
+    if not gauge.color then return end
+    gauge.repaint = true
+    gauge:SetColor(unpack(gauge.color))
+end
+
 -- Everything that follows the fill's edge; the fill texture is replaced when the bar
 -- texture changes, so this re-runs then.
 function Methods:Anchor()
     local fill = self.bar:GetStatusBarTexture()
-    for _, glow in ipairs({ self.glowTop, self.glowBottom }) do glow:ClearAllPoints() end
+    self.glowTop:ClearAllPoints()
+    self.glowBottom:ClearAllPoints()
     self.glowTop:SetPoint("BOTTOMLEFT", fill, "TOPLEFT")
     self.glowTop:SetPoint("BOTTOMRIGHT", fill, "TOPRIGHT")
     self.glowBottom:SetPoint("TOPLEFT", fill, "BOTTOMLEFT")
@@ -167,10 +182,9 @@ function Methods:Layout()
     self.rim:SetGradient("VERTICAL", bottom, top)
     PlaceCap(self.rimL, self.bar, "LEFT", "left", height + outer * 2)
     PlaceCap(self.rimR, self.bar, "RIGHT", "right", height + outer * 2)
-    for _, cap in ipairs({ self.rimL, self.rimR }) do
-        cap:SetGradient("VERTICAL", bottom, top)
-    end
-    for _, part in ipairs({ self.rim, self.rimL, self.rimR }) do part:SetShown(framed) end
+    self.rimL:SetGradient("VERTICAL", bottom, top)
+    self.rimR:SetGradient("VERTICAL", bottom, top)
+    for _, key in ipairs(RIM_PARTS) do self[key]:SetShown(framed) end
 
     PlaceCap(self.startCap, self.bar, "LEFT", "left", height)
     PlaceCap(self.endCap, self.bar:GetStatusBarTexture(), "RIGHT", "right", height)
@@ -182,15 +196,16 @@ function Methods:Layout()
     self.glowBottom:SetHeight(glow)
     self.glowAlpha = 0.45 * math.max(0.3, math.min(1, 3 / height))
     self.spark:SetSize(math.min(12, math.max(8, height * 2)), height + glow * 2)
-    for _, part in ipairs({ self.glowTop, self.glowBottom, self.spark }) do part:SetShown(not framed) end
+    for _, key in ipairs(LINE_PARTS) do self[key]:SetShown(not framed) end
 
     local sheenHeight = math.max(1, math.floor(height * 0.45))
-    for _, sheen in ipairs({ self.sheen, self.sheenL, self.sheenR }) do
+    for _, key in ipairs(SHEENS) do
+        local sheen = self[key]
         sheen:SetHeight(sheenHeight)
         sheen:SetShown(framed)
     end
 
-    if self.color then self:SetColor(unpack(self.color)) end
+    Repaint(self)
 end
 
 -- "line" or "framed".
@@ -210,17 +225,27 @@ function Methods:SetTexture(path)
     self.texture = path
     self.bar:SetStatusBarTexture(path)
     if self.heal then self.heal:SetTexture(path) end
-    for _, cap in ipairs({ self.startCap, self.endCap }) do
+    for _, key in ipairs(CAPS) do
+        local cap = self[key]
         if not cap:SetTexture(path) then cap:SetTexture(WHITE) end
         cap:SetTexCoord(0, 0.02, 0, 1)
     end
     self:Anchor()
+    Repaint(self)
 end
 
 -- Line style draws the core lighter than the tint so it reads as a lit line, with the glow
--- carrying the colour; framed style uses the colour as-is under its sheen.
+-- carrying the colour; framed style uses the colour as-is under its sheen. Asked on every health
+-- update, so the same colour again is left as it is.
 function Methods:SetColor(r, g, b)
-    self.color = { r, g, b }
+    local color = self.color
+    if color and not self.repaint and color[1] == r and color[2] == g and color[3] == b then return end
+    self.repaint = nil
+    if color then
+        color[1], color[2], color[3] = r, g, b
+    else
+        self.color = { r, g, b }
+    end
     local coreR, coreG, coreB = r, g, b
     if self.style ~= "framed" then
         coreR, coreG, coreB = r + (1 - r) * 0.35, g + (1 - g) * 0.35, b + (1 - b) * 0.35
@@ -228,7 +253,14 @@ function Methods:SetColor(r, g, b)
     self.bar:SetStatusBarColor(coreR, coreG, coreB)
     self.startCap:SetVertexColor(coreR, coreG, coreB)
     self.endCap:SetVertexColor(coreR, coreG, coreB)
-    local near, far = CreateColor(r, g, b, self.glowAlpha or 0.45), CreateColor(r, g, b, 0)
+    -- Two colour objects per gauge, made once (SetGradient only reads them).
+    local near, far = self.glowNear, self.glowFar
+    if not near then
+        near, far = CreateColor(r, g, b, 0), CreateColor(r, g, b, 0)
+        self.glowNear, self.glowFar = near, far
+    end
+    near:SetRGBA(r, g, b, self.glowAlpha or 0.45)
+    far:SetRGBA(r, g, b, 0)
     self.glowTop:SetGradient("VERTICAL", near, far)
     self.glowBottom:SetGradient("VERTICAL", far, near)
     self.spark:SetVertexColor(r + (1 - r) * 0.6, g + (1 - g) * 0.6, b + (1 - b) * 0.6, 0.9)
@@ -277,7 +309,8 @@ function Absorb:EnableAbsorb()
     shields.over = ShieldBar(shields.fillClip)
     shields.over:SetReverseFill(true)
     shields.over:SetAllPoints(bar)
-    for _, clip in ipairs({ shields.missClip, shields.fillClip }) do clip:SetFrameLevel(bar:GetFrameLevel() + 2) end
+    shields.missClip:SetFrameLevel(bar:GetFrameLevel() + 2)
+    shields.fillClip:SetFrameLevel(bar:GetFrameLevel() + 2)
     -- The ahead bar is as long as the whole gauge, so a full-size shield can reach its end.
     bar:HookScript("OnSizeChanged", function(_, width) shields.ahead:SetWidth(width) end)
     shields.ahead:SetWidth(bar:GetWidth())
@@ -308,7 +341,8 @@ end
 function Absorb:SetAbsorbColor(r, g, b)
     local shields = self.absorb
     if not shields then return end
-    for _, shield in ipairs({ shields.ahead, shields.over }) do
+    for _, key in ipairs(SHIELDS) do
+        local shield = shields[key]
         shield:SetStatusBarColor(r, g, b, shield.hasStripes and 0.25 or 0.55)
         shield.stripes:SetVertexColor(r, g, b, 0.85)
     end
@@ -317,7 +351,8 @@ end
 function Absorb:SetAbsorb(value, max)
     local shields = self.absorb
     if not shields then return end
-    for _, shield in ipairs({ shields.ahead, shields.over }) do
+    for _, key in ipairs(SHIELDS) do
+        local shield = shields[key]
         shield:SetMinMaxValues(0, max)
         shield:SetValue(value)
     end

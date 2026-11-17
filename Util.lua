@@ -5,16 +5,21 @@ if not Util then return end
 
 local BANK = Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player
 
+local checks -- made on the first call (each is a function and its arguments after the spell)
+
 -- Whether the character has a spell: learned (talents and passives too) or in its spellbook.
 function Util.Knows(spellID)
-    local book = C_SpellBook
-    local checks = {
-        { IsPlayerSpell },
-        { book and book.IsSpellKnown, BANK },
-        { book and book.IsSpellInSpellBook, BANK, false },
-        { IsSpellKnown },
-    }
-    for _, check in ipairs(checks) do
+    if not checks then
+        local book = C_SpellBook
+        checks = {
+            { IsPlayerSpell },
+            { book and book.IsSpellKnown, BANK },
+            { book and book.IsSpellInSpellBook, BANK, false },
+            { IsSpellKnown },
+        }
+    end
+    for i = 1, #checks do
+        local check = checks[i]
         if check[1] then
             local ok, known = pcall(check[1], spellID, check[2], check[3])
             if ok and not FrogLib.issecret(known) and known == true then return true end

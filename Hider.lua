@@ -3,7 +3,7 @@
 -- with the Hider.lua older releases carry; its state lives in this part's table and its hooks call
 -- through it, so a newer copy takes over the frames an older one hid.
 
-local Hider = FrogLib:Module("Hider", 2) -- 2: opts.fadeOnly
+local Hider = FrogLib:Module("Hider", 3) -- 2: opts.fadeOnly; 3: an unchanged Set does nothing
 if not Hider then return end
 
 -- [frame] = { frame, owners = { [owner] = keep list }, kept = { [child] = its own scale },
@@ -222,8 +222,19 @@ function Hider.Refresh()
     if next(frames) then Hider.Flush() end
 end
 
+-- Whether an owner's kept list (as Set copied it) holds what `list` does.
+local function SameKeep(had, list)
+    local count = 0
+    for i, listed in ipairs(list or NONE) do
+        if had[i] ~= listed then return false end
+        count = i
+    end
+    return had[count + 1] == nil
+end
+
 -- owner: the addon's name; frame: a frame or its global name (nothing if the game has none). Hidden
 -- while any owner wants it. opts.fadeOnly: the opacity layer only, for a frame that asks its parent things.
+-- The same request again changes nothing, so it's let be (the hooks and events keep the frames in place).
 function Hider.Set(owner, frame, hidden, opts)
     assert(owner ~= nil, "FrogLib.Hider.Set: who's asking (the addon's name) comes first")
     frame = Resolve(frame)
@@ -235,6 +246,12 @@ function Hider.Set(owner, frame, hidden, opts)
         frames[frame] = state
         hooksecurefunc(frame, "SetParent", function(hooked, parent) Hider.OnSetParent(hooked, parent) end)
         hooksecurefunc(frame, "SetAlpha", function(hooked) Hider.OnSetAlpha(hooked) end)
+    end
+    local had = state.owners[owner]
+    if not Hider.pending then
+        if hidden and had and SameKeep(had, opts and opts.keep)
+            and state.fadeOnly == (opts and opts.fadeOnly or nil) then return end
+        if not hidden and had == nil then return end
     end
     if hidden then
         -- opts.keep: children that stay on screen (global names, keys on the frame or frames), such as

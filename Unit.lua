@@ -2,7 +2,7 @@
 -- (FrogLib.Text) for it. Anything here may come back secret: it's only handed on (to a widget, or
 -- SetFormattedText through the templates), never tested.
 
-local Unit = FrogLib:Module("Unit", 3) -- 2: IsPlayer; secret checks first; 3: the pet's happiness and care
+local Unit = FrogLib:Module("Unit", 4) -- 2: IsPlayer; secret checks first; 3: the pet's happiness and care; 4: opts.values
 if not Unit then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -224,6 +224,7 @@ end
 
 -- The template filled in for the unit (an empty one hides the font string), and whether it went in.
 -- opts.power: value, max and percent are the unit's power (a power bar's text); opts.kind: which power.
+-- opts.values: words' values the caller read a moment ago ({ value, max }, maybe secret), not asked for again.
 function Unit.SetText(fontString, template, unit, opts)
     opts = opts or NONE
     if type(template) ~= "string" or not template:find("%S") then
@@ -238,8 +239,13 @@ function Unit.SetText(fontString, template, unit, opts)
         if opts.fake then
             value = Fake(opts.fake, word, source, opts)
         elseif unit and GET[source] then
-            local ok, got = pcall(GET[source], unit, opts)
-            if ok then value = got end
+            local given = opts.values and opts.values[source]
+            if issecret(given) or given ~= nil then
+                value = given
+            else
+                local ok, got = pcall(GET[source], unit, opts)
+                if ok then value = got end
+            end
         end
         values[word] = value
     end

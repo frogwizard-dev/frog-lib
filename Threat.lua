@@ -1,23 +1,42 @@
 -- FrogLib Threat: your lead on a unit, for threat text (FrogPlates, EnmityList).
 
-local Threat = FrogLib:Module("Threat", 3) -- 2: Short, FormatGap, SetGapText; 3: secret checks first
+local Threat = FrogLib:Module("Threat", 4) -- 2: Short, FormatGap, SetGapText; 3: secret checks first;
+-- 4: your group looked up once a frame, not for every plate
 if not Threat then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
 
-local function ForEachOther(Visit)
-    Visit("pet")
+-- The group's unit tokens in the order they're looked at: your pet, then each member and their
+-- pet. The raid list is made the first time you're in a raid, rather than joined up on every look.
+local RAID
+local PARTY = { "pet", "party1", "partypet1", "party2", "partypet2", "party3", "partypet3", "party4", "partypet4" }
+
+-- Everyone else in your group who's there, pets too. The same for every plate, so worked out at
+-- most once a frame (GetTime stays the same through one), and again if someone joins or leaves.
+local others, otherCount, othersAt, groupSize = {}, 0
+
+local function Others()
+    local now, size = GetTime(), GetNumGroupMembers()
+    if now == othersAt and size == groupSize then return otherCount end
+    othersAt, groupSize = now, size
+    local tokens, last = PARTY, 9
     if IsInRaid() then
-        for i = 1, GetNumGroupMembers() do
-            Visit("raid" .. i)
-            Visit("raidpet" .. i)
+        if not RAID then
+            RAID = { "pet" }
+            for i = 1, 40 do RAID[2 * i], RAID[2 * i + 1] = "raid" .. i, "raidpet" .. i end
         end
-    else
-        for i = 1, 4 do
-            Visit("party" .. i)
-            Visit("partypet" .. i)
+        tokens, last = RAID, 2 * size + 1
+    end
+    local count = 0
+    for i = 1, last do
+        local who = tokens[i]
+        if UnitExists(who) and Safe(UnitIsUnit(who, "player")) == false then
+            count = count + 1
+            others[count] = who
         end
     end
+    otherCount = count
+    return count
 end
 
 -- Your threat minus the highest of anyone else in your group, pets too: ahead when positive. nil
@@ -26,11 +45,10 @@ function Threat.Gap(unit)
     local _, _, _, _, mine = UnitDetailedThreatSituation("player", unit)
     if issecret(mine) or mine == nil then return nil end
     local best
-    ForEachOther(function(who)
-        if not UnitExists(who) or Safe(UnitIsUnit(who, "player")) ~= false then return end
-        local _, _, _, _, theirs = UnitDetailedThreatSituation(who, unit)
+    for i = 1, Others() do
+        local _, _, _, _, theirs = UnitDetailedThreatSituation(others[i], unit)
         if not issecret(theirs) and theirs ~= nil and theirs > 0 and (not best or theirs > best) then best = theirs end
-    end)
+    end
     -- In a group with nobody else on it yet, your lead is all of your threat.
     if not best then return IsInGroup() and mine or nil end
     return mine - best

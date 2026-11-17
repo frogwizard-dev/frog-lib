@@ -3,8 +3,9 @@
 -- up here each time, so a newer copy of FrogLib's apply to it, and an addon can add its own fields.
 -- A control's setting is get and set functions, or a settings table and a key in it.
 
-local UI = FrogLib:Module("UI", 5) -- 2: "Drop shadow" among the outlines; 3: UI.Column, sidebar windows;
--- 4: a search box on tabbed windows; 5: controls bound to a settings table and key
+local UI = FrogLib:Module("UI", 6) -- 2: "Drop shadow" among the outlines; 3: UI.Column, sidebar windows;
+-- 4: a search box on tabbed windows; 5: controls bound to a settings table and key; 6: pages built when
+-- first shown
 if not UI then return end
 
 UI.Controls = UI.Controls or {}
@@ -25,10 +26,13 @@ end
 
 UI.KitMeta = UI.KitMeta or {}
 -- kit.Name(...) -> UI.Controls.Name(kit, ...), looked up at the call: an addon may keep
--- `local Checkbox = UI.Checkbox` from before a newer copy of FrogLib loaded.
+-- `local Checkbox = UI.Checkbox` from before a newer copy of FrogLib loaded. Kept on the kit, so
+-- each name makes its function once.
 UI.KitMeta.__index = function(kit, name)
     if type(UI.Controls[name]) == "function" then
-        return function(...) return UI.Controls[name](kit, ...) end
+        local forward = function(...) return UI.Controls[name](kit, ...) end
+        rawset(kit, name, forward)
+        return forward
     end
 end
 
@@ -672,6 +676,14 @@ local function SidebarWindow(kit, window, width, pages, wopts)
 
     local frames, contents, entries, byKey = {}, {}, {}, {}
     local current, query
+    -- A page is built the first time it shows, or when a search needs its words.
+    local function Build(key)
+        local entry = byKey[key]
+        if entry.words then return end
+        entry.words = {}
+        if entry.build then entry.build(contents[key]) end
+        Words(contents[key], entry.words)
+    end
     -- To the first word the search marked, or the top.
     local function ScrollPage(key)
         local page = frames[key]
@@ -679,6 +691,7 @@ local function SidebarWindow(kit, window, width, pages, wopts)
     end
     local function Select(key)
         current = key
+        Build(key) -- before it shows, so the page's own OnShow hooks run then
         for otherKey, page in pairs(frames) do page:SetShown(otherKey == key) end
         for _, entry in ipairs(entries) do
             if entry.selected then entry.selected:SetShown(entry.key == key) end
@@ -695,7 +708,7 @@ local function SidebarWindow(kit, window, width, pages, wopts)
             entry.row:SetText(page.heading:upper())
         else
             local key = page[1]
-            entry.key, entry.label = key, page[2]
+            entry.key, entry.label, entry.build = key, page[2], page[3]
             local button = CreateFrame("Button", nil, list)
             button:SetSize(SIDE_WIDTH, ENTRY_HEIGHT)
             local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -754,8 +767,9 @@ local function SidebarWindow(kit, window, width, pages, wopts)
         local firstShown
         for _, entry in ipairs(entries) do
             if not entry.heading then
+                if query then Build(entry.key) end
                 local found = false
-                for _, fontString in ipairs(entry.words) do
+                for _, fontString in ipairs(entry.words or {}) do
                     local hit = query and Plain(fontString:GetText()):find(query, 1, true) and true or false
                     Mark(fontString, hit)
                     found = found or hit
@@ -773,10 +787,6 @@ local function SidebarWindow(kit, window, width, pages, wopts)
     end
     search:HookScript("OnTextChanged", Search)
 
-    for _, page in ipairs(pages) do
-        if not page.heading and page[3] then page[3](contents[page[1]]) end
-    end
-    for key, entry in pairs(byKey) do entry.words = Words(contents[key], {}) end
     Relayout()
     for _, page in ipairs(pages) do
         if not page.heading then
@@ -789,8 +799,9 @@ local function SidebarWindow(kit, window, width, pages, wopts)
     return window, contents
 end
 
--- A movable settings window with a row of tabs: frame, contents. pages = { { key, label, build(content) } };
--- wopts: tabWidth (100), tabGap (4), fitTabs, scroll, onSelect(key), search (false: none), sidebar.
+-- A movable settings window with a row of tabs: frame, contents. pages = { { key, label, build(content) } },
+-- each built the first time it shows; wopts: tabWidth (100), tabGap (4), fitTabs, scroll, onSelect(key),
+-- search (false: none), sidebar.
 function Controls.Window(kit, globalName, title, width, height, pages, wopts)
     wopts = wopts or {}
     local window = CreateFrame("Frame", globalName, UIParent, "BasicFrameTemplateWithInset")
@@ -809,13 +820,20 @@ function Controls.Window(kit, globalName, title, width, height, pages, wopts)
     -- pages heads the ones after it.
     if wopts.sidebar then return SidebarWindow(kit, window, width, pages, wopts) end
 
-    local frames, contents, tabs = {}, {}, {}
+    local frames, contents, tabs, builders = {}, {}, {}, {}
     local searching = wopts.search ~= false
     local down = searching and 26 or 0 -- the search box's row, under the tabs
     if searching then window:SetHeight(height + down) end
     local current, query, found = nil, nil, {}
+    -- A page is built the first time it shows, or when a search needs its words.
+    local function Build(key)
+        local build = builders[key]
+        builders[key] = nil
+        if build then build(contents[key]) end
+    end
     local function Select(key)
         current = key
+        Build(key) -- before it shows, so the page's own OnShow hooks run then
         for otherKey, page in pairs(frames) do page:SetShown(otherKey == key) end
         for otherKey, tab in pairs(tabs) do
             if otherKey == key then tab:LockHighlight() else tab:UnlockHighlight() end
@@ -852,11 +870,9 @@ function Controls.Window(kit, globalName, title, width, height, pages, wopts)
             frame:SetPoint("BOTTOMRIGHT", -16, 12)
             content = frame
         end
-        frames[key], contents[key] = frame, content
+        frames[key], contents[key], builders[key] = frame, content, page[3]
     end
-    for _, page in ipairs(pages) do
-        if page[3] then page[3](contents[page[1]]) end
-    end
+    Build(pages[1][1]) -- the first page now, made before the search box as it always was
 
     -- The search: marks the words on every page that have it (opening the sections they're in),
     -- dims the tabs with none, and moves to a page with some when this one has none.
@@ -869,6 +885,7 @@ function Controls.Window(kit, globalName, title, width, height, pages, wopts)
             local first
             for _, page in ipairs(pages) do
                 local key = page[1]
+                if query then Build(key) end
                 local hit = FindOnPage(contents[key], query)
                 found[key] = hit or (query ~= nil and page[2]:lower():find(query, 1, true) ~= nil)
                 tabs[key]:SetAlpha((not query or found[key]) and 1 or 0.4)

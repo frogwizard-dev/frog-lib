@@ -3,7 +3,7 @@
 -- centred exactly (the centre line lights up while it's near enough). One grid for every addon:
 -- its state lives in this part's table.
 
-local Grid = FrogLib:Module("Grid", 1)
+local Grid = FrogLib:Module("Grid", 2) -- 2: the centre line written only when it changes
 if not Grid then return end
 
 local SPACING = 32 -- between lines, in interface units
@@ -29,12 +29,19 @@ local function Build()
     grid:SetFrameStrata("BACKGROUND")
     grid.lines = {}
     grid:Hide()
+    -- Every frame while unlocked, so the centre line is only written when it changes.
     grid:SetScript("OnUpdate", function()
         local tracked = Grid.tracked
-        local near = tracked and math.abs(OffCentre(tracked)) <= SNAP
-        local colour = near and CENTRE_HOT or CENTRE
-        grid.centre:SetColorTexture(colour[1], colour[2], colour[3], colour[4])
-        grid.centre:SetWidth(Pixel() * (near and 3 or 2))
+        local near = tracked and math.abs(OffCentre(tracked)) <= SNAP or false
+        local pixel = Pixel()
+        if near ~= grid.lastNear then
+            local colour = near and CENTRE_HOT or CENTRE
+            grid.centre:SetColorTexture(colour[1], colour[2], colour[3], colour[4])
+        end
+        if near ~= grid.lastNear or pixel ~= grid.lastPixel then
+            grid.centre:SetWidth(pixel * (near and 3 or 2))
+        end
+        grid.lastNear, grid.lastPixel = near, pixel
     end)
     Grid.frame = grid
 end
@@ -75,6 +82,7 @@ local function Layout()
     end
     Add(false, 0, CENTRE, 1)
     grid.centre = Add(true, 0, CENTRE, 2)
+    grid.lastNear, grid.lastPixel = nil, nil -- painted afresh: the next frame writes it again
     for i = count + 1, #grid.lines do grid.lines[i]:Hide() end
 end
 

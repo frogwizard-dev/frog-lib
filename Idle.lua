@@ -3,10 +3,11 @@
 -- and, if wanted, nothing targeted. Watchers and faders keep their methods in this part's table, so
 -- a newer copy's apply to them.
 
-local Idle = FrogLib:Module("Idle", 2) -- 2: opts.ignorePower
+local Idle = FrogLib:Module("Idle", 3) -- 2: opts.ignorePower; 3: CanGate asked once, one recheck per watcher
 if not Idle then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
+local min, max = math.min, math.max
 
 Idle.SETTLE = 4 -- quiet seconds after which a secret power counts as settled
 -- Power that sits at empty when you're resting (it builds up in combat), rather than full.
@@ -22,9 +23,13 @@ local NONE = {}
 -- Whole hundredths: one curve per opacity, however many steps a fade takes.
 local function Round(value) return math.floor(value * 100 + 0.5) / 100 end
 
--- Whether the client can read a secret health this way.
+-- Whether the client can read a secret health this way (asked once: it can't change).
+local canGate
 function Idle.CanGate()
-    return UnitHealthPercent ~= nil and FrogLib.Curve ~= nil and FrogLib.Curve.Full(0) ~= nil
+    if canGate == nil then
+        canGate = UnitHealthPercent ~= nil and FrogLib.Curve ~= nil and FrogLib.Curve.Full(0) ~= nil
+    end
+    return canGate
 end
 
 -- For SetAlpha: `shown` (default 1) below full health, `alpha` at full; may be secret. nil when the
@@ -132,14 +137,19 @@ function Watcher:Changed(kind)
     self.lastChange[kind] = GetTime()
     if self.recheck or (self.enabled and not self.enabled()) then return end
     self.recheck = true
-    local function Check()
-        local wait = math.max(self.lastChange.health, self.lastChange.power) + Idle.SETTLE - GetTime()
-        if wait > 0 then
-            C_Timer.After(wait + 0.05, Check)
-        else
-            self.recheck = nil
-            self:Update(nil)
+    -- One check per watcher, made the first time.
+    local Check = self.check
+    if not Check then
+        Check = function()
+            local wait = max(self.lastChange.health, self.lastChange.power) + Idle.SETTLE - GetTime()
+            if wait > 0 then
+                C_Timer.After(wait + 0.05, Check)
+            else
+                self.recheck = nil
+                self:Update(nil)
+            end
         end
+        self.check = Check
     end
     C_Timer.After(Idle.SETTLE + 0.05, Check)
 end
@@ -200,9 +210,9 @@ function Idle.Tick(elapsed)
     local any = false
     for fader in pairs(Idle.fading) do
         if fader.now < fader.target then
-            fader.now = math.min(fader.target, fader.now + elapsed * fader.speedIn)
+            fader.now = min(fader.target, fader.now + elapsed * fader.speedIn)
         else
-            fader.now = math.max(fader.target, fader.now - elapsed * fader.speedOut)
+            fader.now = max(fader.target, fader.now - elapsed * fader.speedOut)
         end
         fader:Write(fader.now)
         if fader.now == fader.target then Idle.fading[fader] = nil else any = true end

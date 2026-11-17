@@ -1,9 +1,10 @@
 -- FrogLib FSR: the five-second rule. Spending mana stops your mana regen for five seconds; this
--- tells the addons that show it (Personal Resource Tweaks, XIVPlayer) when it starts: from the
--- spell cast and its mana cost, not from your mana, which the game may keep secret. A secret spell
--- falls back to a drop in your mana a moment before or after the cast, when your mana can be read.
+-- tells the addons that show it (Personal Resource Tweaks, XIVPlayer, FrogFrames) when it
+-- starts: from the spell cast and its mana cost, not from your mana, which the game may keep secret. A
+-- secret spell falls back to a drop in your mana a moment before or after the cast, when your mana can
+-- be read. And the strip they show it with, under a mana bar.
 
-local FSR = FrogLib:Module("FSR", 1)
+local FSR = FrogLib:Module("FSR", 3) -- 2: NewStrip; 3: Listen reads each mana change once, and only mana's
 if not FSR then return end
 
 local issecret = FrogLib.issecret
@@ -102,18 +103,77 @@ function Watcher:ReadMana()
     self:OnMana(UnitPower("player", MANA), UnitPowerMax("player", MANA))
 end
 
+------------------------------------------------------------------------------
+-- The strip: under a mana bar, a fill and a spark running across the rule's five seconds
+------------------------------------------------------------------------------
+
+local SPARK = "Interface\\CastingBar\\UI-CastingBar-Spark"
+local Strip = {}
+
+-- Under `bar`, `below` units down: 2 `unit`s tall (a screen pixel, or 1 for the bar's own units), the
+-- spark 8 by 10.
+function Strip:Place(bar, below, unit)
+    self:ClearAllPoints()
+    self:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -below)
+    self:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, -below)
+    self:SetHeight(unit * 2)
+    self.spark:SetSize(unit * 8, unit * 10)
+end
+
+function Strip:SetColor(r, g, b, a)
+    self.fill:SetColorTexture(r, g, b, a or 0.95)
+    self.spark:SetVertexColor(r, g, b)
+end
+
+-- left: seconds of the rule left (filled that far across), or nil to hide it.
+function Strip:SetLeft(left)
+    if not left then
+        self:Hide()
+        return
+    end
+    local x = (1 - left / FSR.RULE) * (self:GetWidth() or 0)
+    self.fill:SetWidth(math.max(0.01, x))
+    self:Show()
+end
+
+-- A hidden strip in `parent`; track: the opacity of a dark track behind the fill (nil: none).
+function FSR.NewStrip(parent, track)
+    local strip = CreateFrame("Frame", nil, parent)
+    if track then
+        strip.track = strip:CreateTexture(nil, "BACKGROUND")
+        strip.track:SetAllPoints()
+        strip.track:SetColorTexture(0, 0, 0, track)
+    end
+    strip.fill = strip:CreateTexture(nil, "ARTWORK")
+    strip.fill:SetPoint("TOPLEFT")
+    strip.fill:SetPoint("BOTTOMLEFT")
+    strip.spark = strip:CreateTexture(nil, "OVERLAY")
+    strip.spark:SetTexture(SPARK)
+    strip.spark:SetBlendMode("ADD")
+    strip.spark:SetPoint("CENTER", strip.fill, "RIGHT") -- on the fill's end: SetLeft only sizes the fill
+    for name, method in pairs(Strip) do strip[name] = method end
+    strip:Hide()
+    return strip
+end
+
 -- Listens to your casts and mana itself.
 function Watcher:Listen()
     if self.events then return end
     local events = CreateFrame("Frame")
     self.events = events
-    for _, event in ipairs({ "UNIT_SPELLCAST_SUCCEEDED", "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "UNIT_MAXPOWER" }) do
+    for _, event in ipairs({ "UNIT_SPELLCAST_SUCCEEDED", "UNIT_MAXPOWER" }) do
         pcall(events.RegisterUnitEvent, events, event, "player")
     end
-    events:SetScript("OnEvent", function(_, event, _, _, spellID)
+    -- Every change of your mana once: UNIT_POWER_FREQUENT has them all (UNIT_POWER_UPDATE came with it, so each
+    -- change was read twice); UNIT_POWER_UPDATE only on a client without it.
+    if not pcall(events.RegisterUnitEvent, events, "UNIT_POWER_FREQUENT", "player") then
+        pcall(events.RegisterUnitEvent, events, "UNIT_POWER_UPDATE", "player")
+    end
+    -- A power event's token (a cast's GUID in that place) says which power: rage and energy are skipped.
+    events:SetScript("OnEvent", function(_, event, _, token, spellID)
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             self:OnCast(spellID)
-        else
+        elseif issecret(token) or token == nil or token == "MANA" then
             self:ReadMana()
         end
     end)

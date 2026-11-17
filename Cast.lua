@@ -3,7 +3,7 @@
 -- secret (the spell's name and icon, its times, whether it can be interrupted), so nothing here
 -- tests it: a secret name still counts, the bar fills on the game's own timer, values go into widgets.
 
-local Cast = FrogLib:Module("Cast", 2) -- 2: NewLine
+local Cast = FrogLib:Module("Cast", 3) -- 2: NewLine; 3: a blank time isn't written every frame
 if not Cast then return end
 
 local issecret = FrogLib.issecret
@@ -144,8 +144,15 @@ function Cast.NewLine(line)
     local holder = line.holder or line.bar
     local sample = line.sample -- { label, value, time, icon }, or loop = seconds: it fills over and over
     local function Paint(color) line.gauge:SetColor(color[1], color[2], color[3]) end
+    local blank = false -- the time is already empty: not written again every frame
+    local function Blank()
+        if blank then return end
+        blank = true
+        line.time:SetText("")
+    end
     local driver = Cast.NewDriver({
         show = function(info)
+            blank = false
             Cast.Fill(line.bar, info)
             line.label:SetText(info.text)
             if line.icon then Cast.SetIcon(line.icon, info.texture) end -- the icon can be secret too
@@ -157,8 +164,10 @@ function Cast.NewLine(line)
             line.bar:SetValue(1)
             Paint(BROKEN)
             line.label:SetText(event == "UNIT_SPELLCAST_FAILED" and FAILED or INTERRUPTED)
+            Blank()
         end,
         sample = function()
+            blank = false
             line.bar:SetMinMaxValues(0, 1)
             if not sample.loop then line.bar:SetValue(sample.value) end
             Paint(COLOR)
@@ -176,14 +185,20 @@ function Cast.NewLine(line)
             if sample.loop then
                 local left = sample.loop - GetTime() % sample.loop
                 bar:SetValue(1 - left / sample.loop)
-                if line.showTime() then line.time:SetFormattedText("%.1f", left) else line.time:SetText("") end
+                if line.showTime() then
+                    blank = false
+                    line.time:SetFormattedText("%.1f", left)
+                else
+                    Blank()
+                end
             end
             return
         end
         if not line.showTime() or driver.holdUntil then
-            line.time:SetText("")
+            Blank()
             return
         end
+        blank = false
         Cast.ShowTime(bar, line.time)
     end)
     return driver

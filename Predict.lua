@@ -3,9 +3,10 @@
 -- damage shields, each a bar of its own, one after the other from the end of the health bar's fill.
 -- Predictions keep their methods in this part's tables, so a newer copy's apply to them.
 
-local Predict = FrogLib:Module("Predict", 1)
+local Predict = FrogLib:Module("Predict", 2) -- 2: nothing made or written again on an update
 if not Predict then return end
 
+local issecret = FrogLib.issecret
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local SMOOTH = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
 local IMMEDIATE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate
@@ -98,11 +99,17 @@ function Prediction:SetTexture(path)
     self:Anchor()
 end
 
--- Given amounts ({ mine = amount, ... }; a sample while unlocked).
+-- Given amounts ({ mine = amount, ... }; a sample while unlocked). The maximum goes on only when
+-- it's new (or secret, so it can't be told).
 function Prediction:SetValues(max, values, instant)
+    max = max or 1
+    local secret = issecret(max)
     for _, key in ipairs(self.parts) do
         local part = self[key]
-        part:SetMinMaxValues(0, max or 1)
+        if secret or part.lastMax ~= max then
+            part:SetMinMaxValues(0, max)
+            part.lastMax = not secret and max or nil
+        end
         local value = values[key] or 0
         if self.ease then
             part:SetValue(value, instant and IMMEDIATE or SMOOTH)
@@ -112,13 +119,20 @@ function Prediction:SetValues(max, values, instant)
     end
 end
 
+-- One table for every update: SetValues reads the amounts at once and keeps none.
+local amounts = {}
+
 -- The unit's amounts, read and drawn.
 function Prediction:Update(unit, instant)
-    local max, mine, others, shield = Predict.Read(unit, self.calculator)
-    self:SetValues(max, { mine = mine, others = others, shield = shield }, instant)
+    local max
+    max, amounts.mine, amounts.others, amounts.shield = Predict.Read(unit, self.calculator)
+    self:SetValues(max, amounts, instant)
+    amounts.mine, amounts.others, amounts.shield = nil, nil, nil
 end
 
 function Prediction:SetShown(shown)
-    self.shown = shown and true or false
-    self.clip:SetShown(self.shown)
+    shown = shown and true or false
+    if self.shown == shown then return end
+    self.shown = shown
+    self.clip:SetShown(shown)
 end

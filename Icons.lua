@@ -3,7 +3,7 @@
 -- font string's text ("|T...RaidTargetingIcon_%d:size|t"), which SetFormattedText fills in
 -- engine-side; a secret "no mark" fails to format, and shows nothing.
 
-local Icons = FrogLib:Module("Icons", 2) -- 2: a failed mark clears the text
+local Icons = FrogLib:Module("Icons", 3) -- 2: a failed mark clears the text; 3: markup and atlases kept
 if not Icons then return end
 
 local Safe = FrogLib.Safe
@@ -14,9 +14,15 @@ local PVP_COORDS = { 0.08, 0.58, 0.045, 0.545 } -- the old PvP badges sit in the
 local ROLE_ATLAS = { TANK = "roleicon-tiny-tank", HEALER = "roleicon-tiny-healer", DAMAGER = "roleicon-tiny-dps" }
 local FULL = { 0, 1, 0, 1 }
 
--- The format string for a mark `size` pixels square.
+-- The format string for a mark `size` pixels square (made once per size).
+local markups = {}
 function Icons.RaidMarkup(size)
-    return "|T" .. RAID_ICON .. "%d:" .. size .. ":" .. size .. "|t"
+    local markup = markups[size]
+    if not markup then
+        markup = "|T" .. RAID_ICON .. "%d:" .. size .. ":" .. size .. "|t"
+        markups[size] = markup
+    end
+    return markup
 end
 
 -- Whether a mark went into the font string (index may be secret; nil or false: no mark). It
@@ -33,8 +39,16 @@ function Icons.RaidMark(fontString, unit, size)
     return Icons.SetRaidMark(fontString, GetRaidTargetIndex(unit), size)
 end
 
+-- [atlas] = whether the client has it: fixed for the session, and asking makes a new table.
+local atlases = {}
 local function HasAtlas(atlas)
-    return atlas and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas) ~= nil
+    if not atlas then return nil end
+    local known = atlases[atlas]
+    if known == nil then
+        known = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas) ~= nil or false
+        atlases[atlas] = known
+    end
+    return known
 end
 
 -- The modern atlas where the client has it, otherwise the classic file (cut to coords).

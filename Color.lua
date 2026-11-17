@@ -2,7 +2,7 @@
 -- tables; the functions return r, g, b. Anything the game keeps secret (a class, a reaction,
 -- whether a mob is tapped) is never tested: that rule doesn't apply, and the next one does.
 
-local Color = FrogLib:Module("Color", 2) -- 2: secret checks first
+local Color = FrogLib:Module("Color", 3) -- 2: secret checks first; 3: the game's class colours kept
 if not Color then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -16,15 +16,25 @@ Color.XIV = {
 }
 local MANA = { r = 0, g = 0, b = 1 }
 
+-- [class] = the game's colour ({ r, g, b } only), or false: it can't change in a session, and asking
+-- makes a whole new colour object each time.
+local gameColors = {}
+
 local function Lookup(class)
     local custom = _G.CUSTOM_CLASS_COLORS
     local color = custom and custom[class]
     if color then return color end
-    if C_ClassColor and C_ClassColor.GetClassColor then
-        local ok, got = pcall(C_ClassColor.GetClassColor, class)
-        if ok and got then return got end
+    color = gameColors[class]
+    if color == nil then
+        if C_ClassColor and C_ClassColor.GetClassColor then
+            local ok, got = pcall(C_ClassColor.GetClassColor, class)
+            if ok then color = got end
+        end
+        color = color or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[class])
+        color = color and { r = color.r, g = color.g, b = color.b } or false
+        gameColors[class] = color
     end
-    return RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+    return color or nil
 end
 
 -- A class's colour (its token, "PALADIN"), from a class colour addon (CUSTOM_CLASS_COLORS) first,

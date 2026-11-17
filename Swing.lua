@@ -3,7 +3,7 @@
 -- next swing. Values the game may keep secret (the swing's type and duration, attack speeds, range)
 -- are never compared: a secret type is skipped, a secret duration falls back on the weapon's speed.
 
-local Swing = FrogLib:Module("Swing", 1)
+local Swing = FrogLib:Module("Swing", 2) -- 2: Listen; ADDON_LOADED only till Blizzard_SwingTimer loads
 if not Swing then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -42,6 +42,7 @@ function Swing.Wanted(show, inCombat)
     if show == "always" then return true end
     local combat = inCombat
     if combat == nil then combat = Safe(UnitAffectingCombat("player")) and true or false end
+    if show == "combat" then return combat end
     local exists = UnitExists("target")
     local enemy = (issecret(exists) or exists) and Safe(UnitCanAttack("player", "target")) == true
         and Safe(UnitIsDead("target")) ~= true or false
@@ -110,8 +111,7 @@ local Tracker = Swing.TrackerMethods
 Swing.TrackerMeta = Swing.TrackerMeta or { __index = Tracker }
 
 local EVENTS = { "PLAYER_SWING", "PLAYER_SWING_RANGE_UPDATE", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
-    "PLAYER_TARGET_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "WEAPON_SLOT_CHANGED", "PLAYER_ENTERING_WORLD",
-    "ADDON_LOADED" }
+    "PLAYER_TARGET_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "WEAPON_SLOT_CHANGED", "PLAYER_ENTERING_WORLD" }
 
 local function Call(Callback, ...)
     if Callback then Callback(...) end
@@ -121,14 +121,32 @@ end
 -- while samples show); called back: onStart(hand), onShown(), onRange(), onLayout(event), onBlizzard().
 function Swing.NewTracker(opts)
     local tracker = setmetatable({ opts = opts or {}, swings = {} }, Swing.TrackerMeta)
-    local events = CreateFrame("Frame")
-    tracker.frame = events
+    tracker.frame = CreateFrame("Frame")
+    tracker.frame:SetScript("OnEvent", function(_, event, ...) tracker:OnEvent(event, ...) end)
+    tracker:Listen(true)
+    return tracker
+end
+
+-- Listening to the game, or (off, the timers not used) only to the swings, so turned back on mid-fight
+-- the running one shows. Combat is read afresh when it comes back on, its events having been missed.
+function Tracker:Listen(on)
+    on = on and true or false
+    if on == self.listening then return end
+    self.listening = on
+    local events = self.frame
+    if not on then
+        events:UnregisterAllEvents()
+        pcall(events.RegisterEvent, events, "PLAYER_SWING")
+        pcall(events.RegisterEvent, events, "WEAPON_SLOT_CHANGED")
+        return
+    end
+    self.inCombat = nil
     for _, event in ipairs(EVENTS) do pcall(events.RegisterEvent, events, event) end
-    for _, event in ipairs(tracker.opts.events or {}) do pcall(events.RegisterEvent, events, event) end
+    for _, event in ipairs(self.opts.events or {}) do pcall(events.RegisterEvent, events, event) end
+    -- Every addon loading is only watched for Blizzard's swing bars, till they're there.
+    if not FrogLib.Loaded("Blizzard_SwingTimer") then events:RegisterEvent("ADDON_LOADED") end
     pcall(events.RegisterUnitEvent, events, "UNIT_ATTACK_SPEED", "player")
     pcall(events.RegisterUnitEvent, events, "UNIT_FLAGS", "target")
-    events:SetScript("OnEvent", function(_, event, ...) tracker:OnEvent(event, ...) end)
-    return tracker
 end
 
 function Tracker:Hand(swingType)
@@ -143,7 +161,12 @@ end
 function Tracker:Start(hand, duration)
     if issecret(duration) or type(duration) ~= "number" then duration = Swing.Speed(hand) end
     if not duration or duration <= 0 then return false end
-    self.swings[hand.key] = { duration = duration, ends = GetTime() + duration }
+    -- One record per hand, reused (a tracker an older copy made has none yet).
+    self.records = self.records or {}
+    local record = self.records[hand.key] or {}
+    self.records[hand.key] = record
+    record.duration, record.ends = duration, GetTime() + duration
+    self.swings[hand.key] = record
     return true
 end
 
@@ -186,7 +209,10 @@ function Tracker:OnEvent(event, ...)
         Call(opts.onShown)
         Call(opts.onRange)
     elseif event == "ADDON_LOADED" then
-        if ... == "Blizzard_SwingTimer" then Call(opts.onBlizzard) end
+        if ... == "Blizzard_SwingTimer" then
+            self.frame:UnregisterEvent("ADDON_LOADED")
+            Call(opts.onBlizzard)
+        end
     elseif event == "WEAPON_SLOT_CHANGED" then
         -- A new weapon mid-swing: the running timers restart at its speed (as Blizzard's do).
         for _, hand in ipairs(Swing.HANDS) do

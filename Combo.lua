@@ -3,7 +3,7 @@
 -- The count may be secret, so it's never compared: each pip is a status bar from i - 1 to i handed
 -- the count, which the game fills or leaves empty; the colour at max is a second bar the same way.
 
-local Combo = FrogLib:Module("Combo", 2) -- 2: Lit
+local Combo = FrogLib:Module("Combo", 3) -- 2: Lit; 3: Watch skips other powers' changes
 if not Combo then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -128,8 +128,6 @@ function Row:Update(sample, hideEmpty)
     if not pcall(self.holder.SetAlpha, self.holder, alpha) then self.holder:SetAlpha(1) end
 end
 
-local POINT_EVENTS = { PLAYER_TARGET_CHANGED = true, UNIT_POWER_FREQUENT = true, UNIT_POWER_UPDATE = true }
-
 -- onPoints() when the count may have changed (power, a new target); onChange() when whether they
 -- show or how many may have (a form, the max, the world).
 function Combo.Watch(onPoints, onChange)
@@ -137,11 +135,25 @@ function Combo.Watch(onPoints, onChange)
     events:RegisterEvent("PLAYER_ENTERING_WORLD")
     events:RegisterEvent("PLAYER_TARGET_CHANGED")
     events:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
-    for _, event in ipairs({ "UNIT_POWER_FREQUENT", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER" }) do
-        events:RegisterUnitEvent(event, "player")
+    events:RegisterUnitEvent("UNIT_MAXPOWER", "player")
+    events:RegisterUnitEvent("UNIT_DISPLAYPOWER", "player")
+    -- Each change once: UNIT_POWER_FREQUENT has them all, UNIT_POWER_UPDATE only on a client without it.
+    if not pcall(events.RegisterUnitEvent, events, "UNIT_POWER_FREQUENT", "player") then
+        events:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
     end
-    events:SetScript("OnEvent", function(_, event)
-        if POINT_EVENTS[event] then onPoints() else onChange() end
+    events:SetScript("OnEvent", function(_, event, _, token)
+        -- Another power's change (a readable token) can't move the count; energy's still counts, as a
+        -- client may only send the spender's.
+        local other = not issecret(token) and type(token) == "string" and token ~= "COMBO_POINTS"
+        if event == "UNIT_POWER_FREQUENT" or event == "UNIT_POWER_UPDATE" then
+            if not other or token == "ENERGY" then onPoints() end
+        elseif event == "UNIT_MAXPOWER" then
+            if not other then onChange() end
+        elseif event == "PLAYER_TARGET_CHANGED" then
+            onPoints()
+        else
+            onChange()
+        end
     end)
     return events
 end
