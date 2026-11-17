@@ -3,7 +3,8 @@
 -- with the Hider.lua older releases carry; its state lives in this part's table and its hooks call
 -- through it, so a newer copy takes over the frames an older one hid.
 
-local Hider = FrogLib:Module("Hider", 3) -- 2: opts.fadeOnly; 3: an unchanged Set does nothing
+local Hider = FrogLib:Module("Hider", 4) -- 2: opts.fadeOnly; 3: an unchanged Set does nothing;
+-- 4: menu owners only fade in the gamepad UI, scales set past Edit Mode's override
 if not Hider then return end
 
 -- [frame] = { frame, owners = { [owner] = keep list }, kept = { [child] = its own scale },
@@ -37,6 +38,28 @@ end
 
 local function On(state)
     return state ~= nil and next(state.owners) ~= nil
+end
+
+-- Frames the gamepad UI opens a menu on: Y opens the target menu on TargetFrame, and a menu closes the moment its
+-- owner isn't visible. In the gamepad UI they only fade, their mouse off, so the menu stays (as EllesmereUI does);
+-- listed with them, their children that take clicks (the target of target's button) go mouse-off too, unless an
+-- owner keeps them on screen.
+local MENU_OWNERS = { TargetFrame = { "totFrame" } }
+
+local function GamepadUI()
+    return InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled() or false
+end
+
+local function FadeOnly(state)
+    if state.fadeOnly then return true end
+    local name = state.frame:GetName()
+    return name ~= nil and MENU_OWNERS[name] ~= nil and GamepadUI()
+end
+
+-- Edit Mode replaces its frames' SetScale with one that re-anchors and lays out the managed frames: the original,
+-- so that layout doesn't run under our taint.
+local function SetScale(frame, scale)
+    (frame.SetScaleBase or frame.SetScale)(frame, scale)
 end
 
 -- Whether any owner is hiding it.
@@ -149,9 +172,36 @@ local function Release(state, hidden)
     local frame = state.frame
     if state.home and frame:GetParent() == hidden then
         frame:SetParent(state.home)
-        if state.homeScale then frame:SetScale(state.homeScale) end
+        if state.homeScale then SetScale(frame, state.homeScale) end
     end
     state.home, state.homeScale = nil, nil
+end
+
+-- A frame only faded takes no clicks while hidden (out of combat only, as Apply is), nor its listed children that
+-- aren't kept out (state.childMouse: those we turned off).
+local function MouseOne(frame, off, store, key)
+    if off and not store[key] and frame:IsMouseEnabled() then
+        frame:EnableMouse(false)
+        store[key] = true
+    elseif not off and store[key] then
+        frame:EnableMouse(true)
+        store[key] = nil
+    end
+end
+
+local function Mouse(state, off)
+    local frame = state.frame
+    MouseOne(frame, off, state, "mouseOff")
+    local name = frame:GetName()
+    local children = name and MENU_OWNERS[name]
+    if not children then return end
+    state.childMouse = state.childMouse or {}
+    for _, key in ipairs(children) do
+        local child = frame[key]
+        if type(child) == "table" and child.EnableMouse then
+            MouseOne(child, off and child:GetParent() == frame, state.childMouse, child)
+        end
+    end
 end
 
 -- Children kept out that should go back in (no longer kept, or the frame's shown), and the size
@@ -162,12 +212,12 @@ local function Settle(state, keep)
         local parent = child:GetParent()
         if parent == UIParent and keep and keep[child] then
             local want = scale * frame:GetScale()
-            if child:GetScale() ~= want then child:SetScale(want) end
+            if child:GetScale() ~= want then SetScale(child, want) end
         else
             state.kept[child] = nil
             keptBy[child] = nil
             if parent == UIParent then child:SetParent(frame) end
-            child:SetScale(scale)
+            SetScale(child, scale)
         end
     end
 end
@@ -182,21 +232,25 @@ local function KeepOut(state, keep)
             state.kept[child] = scale
             keptBy[child] = state
             child:SetParent(UIParent)
-            child:SetScale(scale * frame:GetScale())
+            SetScale(child, scale * frame:GetScale())
         end
     end
 end
 
+-- Only faded (a menu owner in the gamepad UI), it stays under its own parent, but its kept children still move out:
+-- left in, they'd fade with it (Blizzard's combo points sit on the target frame).
 local function Apply(state, hidden)
-    if On(state) and not state.fadeOnly then
+    local fadeOnly = FadeOnly(state)
+    if On(state) then
         local keep = KeepSet(state)
-        Take(state, hidden)
+        if fadeOnly then Release(state, hidden) else Take(state, hidden) end
         Settle(state, keep)
         KeepOut(state, keep)
     else
         Settle(state, nil)
         Release(state, hidden)
     end
+    Mouse(state, On(state) and fadeOnly and not state.fadeOnly)
 end
 
 -- Frames come back before others hide, so a child going back to its parent (the pet frame to the
@@ -287,6 +341,8 @@ Hider.events = Hider.events or CreateFrame("Frame")
 Hider.events:RegisterEvent("PLAYER_REGEN_ENABLED")
 Hider.events:RegisterEvent("PLAYER_ENTERING_WORLD")
 pcall(Hider.events.RegisterEvent, Hider.events, "EDIT_MODE_LAYOUTS_UPDATED")
+-- Into or out of the gamepad UI (read a frame later, when the new style is in): menu owners fade or go back under.
+pcall(Hider.events.RegisterEvent, Hider.events, "INPUT_DEVICE_INTERFACE_TRANSITION")
 Hider.events:SetScript("OnEvent", function(_, event) Hider.OnEvent(event) end)
 if EventRegistry and not Hider.editModeHooked then
     Hider.editModeHooked = true

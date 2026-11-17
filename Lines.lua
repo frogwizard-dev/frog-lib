@@ -3,7 +3,8 @@
 -- out again when the map changes (a zoom only changes their width). Minimap: around you, clipped to
 -- its round (or square) edge, turned with it when it turns, a few times a second while anything moves.
 
-local Lines = FrogLib:Module("Lines", 2) -- 2: the minimap's scale from FrogLib's MinimapView
+local Lines = FrogLib:Module("Lines", 3) -- 2: the minimap's scale from FrogLib's MinimapView; 3: the world map's
+-- changes heard through a data provider, no hooks on the map
 if not Lines then return end
 
 local sqrt = math.sqrt
@@ -145,17 +146,20 @@ function Methods:DrawMap()
     Finish(pool)
 end
 
+-- Told by the map itself when it shows, changes map, zooms or resizes, through a data provider of ours that draws
+-- nothing of the map's: the map calls its providers sealed off from its own code, where hooks on its OnShow and
+-- methods ran inside it (the map's state left as ours, its quest pins then blocked in combat).
 local function HookMap()
-    if mapHooked or not WorldMapFrame then return end
+    if mapHooked or not (WorldMapFrame and WorldMapFrame.AddDataProvider and MapCanvasDataProviderMixin) then return end
     mapHooked = true
     if loader then loader:UnregisterAllEvents() end
     local function Redraw()
         for _, layer in pairs(layers) do layer:DrawMap() end
     end
-    hooksecurefunc(WorldMapFrame, "OnMapChanged", Redraw)
-    if WorldMapFrame.OnCanvasScaleChanged then hooksecurefunc(WorldMapFrame, "OnCanvasScaleChanged", Redraw) end
-    WorldMapFrame:HookScript("OnShow", Redraw)
-    if WorldMapFrame.ScrollContainer then WorldMapFrame.ScrollContainer:HookScript("OnSizeChanged", Redraw) end
+    local provider = CreateFromMixins(MapCanvasDataProviderMixin)
+    provider.OnShow, provider.OnMapChanged = Redraw, Redraw
+    provider.OnCanvasScaleChanged, provider.OnCanvasSizeChanged = Redraw, Redraw
+    WorldMapFrame:AddDataProvider(provider)
 end
 
 -- Minimap --------------------------------------------------------------------------------------

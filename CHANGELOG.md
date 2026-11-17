@@ -1,5 +1,40 @@
 # FrogLib
 
+## 1.12.0
+
+Fixes and savings found by comparing the Frog addons with EllesmereUI, which has met these on Forever.
+
+- Combo points: moving your points to a new target (Seal Fate, a druid's new target) no longer leaves the pips at the old count; they follow the game's own signal for it. They no longer redraw on every energy tick.
+- Unit frames: shift-, ctrl- and alt-click on a frame now target too (the game dropped a target click with a modifier held).
+- The gamepad UI's target menu (Y) stays open: a hidden target frame now only fades out there, its clicks off, rather than being taken off screen, which closed the menu the moment it opened. Switching to or from the gamepad UI changes it over. What an addon keeps on screen from it (Blizzard's combo points, the target of target) still shows there, and a target of target that isn't kept takes no clicks while the frame is faded.
+- Hiding the player frame no longer runs Edit Mode's own layout code when the pet frame's size is put back.
+- Cast bars: an interrupted channel (Drain Life, a bandage, Arcane Missiles) shows red "Interrupted" like an interrupted cast, rather than ending as if it had finished. A red bar no longer carries over to your new target. A cast that can't be interrupted shows grey even while the game keeps that secret, with the line style's spark still on top.
+- Swing timers: the off-hand and ranged bars no longer pop up mid-fight for an empty hand when a haste proc makes your attack speed secret. Out of range now comes from the game's own range event (it's switched on).
+- Names: other people's names in Russian, Korean or Chinese now draw in every font, on an English client too (a Latin-only font left them blank). Names use a font family: your font for Latin letters, the game's for the rest, keeping their drop shadow. On a Chinese client names are drawn at the size you chose (the lift Chinese letters get beside Latin ones is only for other clients).
+- Threat: your target's plate shows your lead in numbers again (threat reads as secret through a plate, plainly through your target). Your target's plate is found by its plate, which works where the game hides whether two units are the same.
+- Nameplates (FrogPlates, XIVPlates):
+  - A mob whose plate came up before the game knew it was hostile, a duel, or a PvP flag going on or off now gets the right plate, decided again as it changes.
+  - The quest "!" shows only for your own objectives, not your groupmates'.
+  - A damage dealer playing alone no longer sees every mob in the danger colour.
+  - Paladins: Righteous Fury (Forever's own versions too) keeps the plates in tank colours through a fight, even while the game keeps your auras secret.
+  - A plate reused for a new mob can no longer be hidden by the old one going.
+  - Blizzard's cast bar font comes back on plates handed back.
+  - Picking a target whose plate isn't up yet (far off, out of sight) dims the other plates once its plate shows, and they come back to full when its plate goes out of view again.
+  - A quest "!" missed because the game didn't have the mob's tooltip yet is looked for again.
+  - The Forever border stays on whole screen pixels as plates grow with distance or for your target (Borders: the Forever frame can sit on a frame that ignores its parent's scale).
+  - Less work:
+    - A new plate looks at its own target state, not every plate's.
+    - Nothing runs every frame out of combat.
+    - Cast times are written by an animation rather than a script on every casting plate.
+    - Plate settings are written to the game only when they change (each write made Blizzard refresh every plate).
+    - A quest tooltip is read once per plate.
+    - A new spell or stance repaints the plates only when your execute or tanking changed.
+    - A friendly plate (a city's townsfolk) is looked at again only once it can be attacked.
+- Five-second rule: your mana is only listened to from your first fight, or a cast whose spell the game keeps secret, on (the one case that needs it); warriors and rogues listen to nothing.
+- Smaller things: dragged frames land on whole screen pixels (crisp 1 px borders); a screen size of 0 mid display change no longer breaks pixel sizes; a font file that won't load is retried by one timer at a time, and a newer font setting stops the retry; settings the game can't take in combat wait without listening for combat's end all the time; button looks and font settings keep their notes in FrogLib's own tables, never on Blizzard's buttons and text.
+- Route lines (FrogRoute) hear the world map showing, changing map and zooming through a map data provider, which the map runs sealed off from its own code, rather than hooks on the map that ran inside it.
+- New: `Threat.Readable(unit)`, `Media:SetNameFont`, `Media.Wanted(fontString)`, `ButtonSkin.SetSlot`/`Slot`/`IsClassic`, skins' optional `targetPlate(plate)`, `Driver:Update`'s fourth argument (a channel stop's interrupter), `Borders.Forever`'s fourth argument (the frame its textures go on).
+
 ## 1.11.1
 
 - Cast: a cast bar's time left ("1.4") is written twenty times a second rather than every frame (its tenths only change ten times a second), so FrogFrames' and XIVTarget's cast bars do a third of the work while a cast runs, less at high frame rates.

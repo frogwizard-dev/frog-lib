@@ -3,7 +3,7 @@
 -- is on). The highest layer wanting a setting wins. Your own setting is kept in each addon's saved
 -- variables, so it comes back even after a crash or a logout mid-change.
 
-local CVar = FrogLib:Module("CVar", 1)
+local CVar = FrogLib:Module("CVar", 2) -- 2: the combat waiter listens only while something waits
 if not CVar then return end
 
 CVar.wants = CVar.wants or {}       -- [owner] = { layer =, values = { [name] = value } }
@@ -31,17 +31,19 @@ local waiter
 
 local function Apply()
     if InCombatLockdown() then
-        pending = true
+        -- Once the fight ends; the waiter listens only while something waits.
         if not waiter then
             waiter = CreateFrame("Frame")
-            waiter:RegisterEvent("PLAYER_REGEN_ENABLED")
-            waiter:SetScript("OnEvent", function()
+            waiter:SetScript("OnEvent", function(self)
+                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
                 if pending then
                     pending = nil
                     Apply()
                 end
             end)
         end
+        pending = true
+        waiter:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
     local names = {}

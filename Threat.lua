@@ -1,7 +1,7 @@
 -- FrogLib Threat: your lead on a unit, for threat text (FrogPlates, EnmityList).
 
-local Threat = FrogLib:Module("Threat", 4) -- 2: Short, FormatGap, SetGapText; 3: secret checks first;
--- 4: your group looked up once a frame, not for every plate
+local Threat = FrogLib:Module("Threat", 5) -- 2: Short, FormatGap, SetGapText; 3: secret checks first;
+-- 4: your group looked up once a frame, not for every plate; 5: your target's plate read through "target"
 if not Threat then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -39,9 +39,24 @@ local function Others()
     return count
 end
 
+-- The token to read a unit's threat through: threat reads as secret through a nameplate token but plainly through
+-- "target" (EllesmereUI found it in game), so your target's plate is read as your target. A plate's token is matched
+-- by its plate frame (whether two units are the same can itself be secret where threat is).
+function Threat.Readable(unit)
+    if unit == "target" or type(unit) ~= "string" then return unit end
+    if C_NamePlate and C_NamePlate.GetNamePlateForUnit and unit:find("^nameplate") then
+        local plate = C_NamePlate.GetNamePlateForUnit(unit)
+        if plate ~= nil and plate == C_NamePlate.GetNamePlateForUnit("target") then return "target" end
+        return unit
+    end
+    if Safe(UnitIsUnit(unit, "target")) == true then return "target" end
+    return unit
+end
+
 -- Your threat minus the highest of anyone else in your group, pets too: ahead when positive. nil
 -- when the game hides your threat, or you're alone with no one else on it.
 function Threat.Gap(unit)
+    unit = Threat.Readable(unit)
     local _, _, _, _, mine = UnitDetailedThreatSituation("player", unit)
     if issecret(mine) or mine == nil then return nil end
     local best
@@ -93,6 +108,7 @@ end
 
 -- Lines of text: what the game lets addons see of the threat on the unit, for a threat report.
 function Threat.Snapshot(unit)
+    unit = Threat.Readable(unit)
     local _, status, percent, _, mine = UnitDetailedThreatSituation("player", unit)
     local lines = {
         string.format("on %s: your threat %s (%s%%, status %s, situation %s); in a group: %s; lead shown: %s",

@@ -3,8 +3,8 @@
 -- secret (the spell's name and icon, its times, whether it can be interrupted), so nothing here
 -- tests it: a secret name still counts, the bar fills on the game's own timer, values go into widgets.
 
-local Cast = FrogLib:Module("Cast", 4) -- 2: NewLine; 3: a blank time isn't written every frame; 4: a running one
--- twenty times a second
+local Cast = FrogLib:Module("Cast", 5) -- 2: NewLine; 3: a blank time isn't written every frame; 4: a running one
+-- twenty times a second; 5: interrupted channels held, holds end with the unit, secret "can't interrupt" greys
 if not Cast then return end
 
 local issecret = FrogLib.issecret
@@ -106,10 +106,22 @@ function Driver:HoldOver()
     if self.view.refresh then self.view.refresh() else self:Hide() end
 end
 
+-- Whether the cast was broken off: interrupted, failed, or a channel stopped by someone (its stop event names who,
+-- as Blizzard's own bar reads it; unreadable, it counts as finished).
+local function Broken(event, interruptedBy)
+    if event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED" then return true end
+    return event == "UNIT_SPELLCAST_CHANNEL_STOP" and not issecret(interruptedBy) and interruptedBy ~= nil
+end
+
 -- unit nil when there's nobody to show; unlocked, a sample shows unless there's a real cast. What's
 -- showing is in self.casting, self.holdUntil and self.sample (no time is written while held or a sample).
-function Driver:Update(unit, event, unlocked)
+-- interruptedBy: UNIT_SPELLCAST_CHANNEL_STOP's fourth argument.
+function Driver:Update(unit, event, unlocked, interruptedBy)
     self.sample = nil
+    -- Anything but a cast event (a new target, a refresh) ends a hold: the red bar was another unit's cast.
+    if self.holdUntil and not (type(event) == "string" and event:find("^UNIT_SPELLCAST_")) then
+        self.holdUntil = nil
+    end
     if not unit then
         if unlocked then self:Sample() else self:Hide() end
         return
@@ -118,7 +130,7 @@ function Driver:Update(unit, event, unlocked)
     if info and Has(info.duration) then
         self.casting, self.holdUntil = true, nil
         self.view.show(info)
-    elseif (event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED") and self.casting then
+    elseif Broken(event, interruptedBy) and self.casting then
         -- Held briefly in red, so an interrupt is seen.
         self.casting = false
         local hold = GetTime() + Cast.HOLD
@@ -147,6 +159,34 @@ function Cast.NewLine(line)
     local holder = line.holder or line.bar
     local sample = line.sample -- { label, value, time, icon }, or loop = seconds: it fills over and over
     local function Paint(color) line.gauge:SetColor(color[1], color[2], color[3]) end
+    -- Grey over the fill when whether it can be interrupted is secret: shown by the game from the secret yes/no
+    -- (on a frame: EllesmereUI found SetAlphaFromBoolean on a texture drew nothing).
+    local locker
+    local function Lock(locked)
+        if not issecret(locked) then
+            if locker then locker:SetAlpha(0) end
+            return locked == true
+        end
+        if not locker then
+            locker = CreateFrame("Frame", nil, line.bar)
+            locker:SetFrameLevel(line.bar:GetFrameLevel() + 1)
+            locker.tint = locker:CreateTexture(nil, "ARTWORK")
+            locker.tint:SetAllPoints()
+            locker.tint:SetColorTexture(LOCKED[1], LOCKED[2], LOCKED[3])
+            -- The line style's spark sits on the fill's end: lifted above the grey, which would cover half of it.
+            local spark = line.gauge and line.gauge.spark
+            if spark then
+                local over = CreateFrame("Frame", nil, line.bar)
+                over:SetAllPoints(line.bar)
+                over:SetFrameLevel(line.bar:GetFrameLevel() + 2)
+                spark:SetParent(over)
+            end
+        end
+        locker:SetAllPoints(line.bar:GetStatusBarTexture()) -- the fill's texture is replaced with the bar texture
+        if not pcall(locker.SetAlphaFromBoolean, locker, locked, 1, 0) then locker:SetAlpha(0) end
+        return false
+    end
+    local function Unlock() if locker then locker:SetAlpha(0) end end
     local blank = false -- the time is already empty: not written again every frame
     local wait = 0      -- seconds till the running time is written again
     local function Blank()
@@ -160,10 +200,11 @@ function Cast.NewLine(line)
             Cast.Fill(line.bar, info)
             line.label:SetText(info.text)
             if line.icon then Cast.SetIcon(line.icon, info.texture) end -- the icon can be secret too
-            Paint(Cast.Locked(info) and LOCKED or COLOR)
+            Paint(Lock(info.notInterruptible) and LOCKED or COLOR)
             holder:Show()
         end,
         hold = function(event)
+            Unlock()
             line.bar:SetMinMaxValues(0, 1)
             line.bar:SetValue(1)
             Paint(BROKEN)
@@ -172,6 +213,7 @@ function Cast.NewLine(line)
         end,
         sample = function()
             blank = false
+            Unlock()
             line.bar:SetMinMaxValues(0, 1)
             if not sample.loop then line.bar:SetValue(sample.value) end
             Paint(COLOR)

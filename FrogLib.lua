@@ -3,7 +3,7 @@
 -- copy), and it also loads on its own as the FrogLib addon. With several loaded, the newest copy
 -- of each part wins, so a newer part must stay compatible with the old.
 
-local MINOR = 2 -- 2: PixelSnap (1 shipped in the first releases of the addons)
+local MINOR = 3 -- 2: PixelSnap (1 shipped in the first releases of the addons); 3: Pixel survives a 0 screen height
 
 local lib = _G.FrogLib
 if lib and (lib.minor or 0) >= MINOR then return end
@@ -33,9 +33,12 @@ function lib.Safe(value)
     return value
 end
 
--- One screen pixel in the frame's units.
+-- One screen pixel in the frame's units. Mid display change the screen can read 0 tall: the last real height stands.
+local screenHeight = 768
 function lib.Pixel(frame)
-    return 768 / select(2, GetPhysicalScreenSize()) / frame:GetEffectiveScale()
+    local _, height = GetPhysicalScreenSize()
+    if type(height) == "number" and height > 0 then screenHeight = height end
+    return 768 / screenHeight / frame:GetEffectiveScale()
 end
 
 -- Keeps a texture exactly where it's put (no pixel snapping).

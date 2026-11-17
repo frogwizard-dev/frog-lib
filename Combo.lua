@@ -3,7 +3,7 @@
 -- The count may be secret, so it's never compared: each pip is a status bar from i - 1 to i handed
 -- the count, which the game fills or leaves empty; the colour at max is a second bar the same way.
 
-local Combo = FrogLib:Module("Combo", 3) -- 2: Lit; 3: Watch skips other powers' changes
+local Combo = FrogLib:Module("Combo", 4) -- 2: Lit; 3: Watch skips other powers' changes; 4: COMBO_TARGET_CHANGED
 if not Combo then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -134,6 +134,8 @@ function Combo.Watch(onPoints, onChange)
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_ENTERING_WORLD")
     events:RegisterEvent("PLAYER_TARGET_CHANGED")
+    -- Points moved to a new target keep their count, so no power event comes (Blizzard's own bar listens for it).
+    pcall(events.RegisterEvent, events, "COMBO_TARGET_CHANGED")
     events:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     events:RegisterUnitEvent("UNIT_MAXPOWER", "player")
     events:RegisterUnitEvent("UNIT_DISPLAYPOWER", "player")
@@ -142,14 +144,13 @@ function Combo.Watch(onPoints, onChange)
         events:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
     end
     events:SetScript("OnEvent", function(_, event, _, token)
-        -- Another power's change (a readable token) can't move the count; energy's still counts, as a
-        -- client may only send the spender's.
+        -- Another power's change (a readable token) can't move the count.
         local other = not issecret(token) and type(token) == "string" and token ~= "COMBO_POINTS"
         if event == "UNIT_POWER_FREQUENT" or event == "UNIT_POWER_UPDATE" then
-            if not other or token == "ENERGY" then onPoints() end
+            if not other then onPoints() end
         elseif event == "UNIT_MAXPOWER" then
             if not other then onChange() end
-        elseif event == "PLAYER_TARGET_CHANGED" then
+        elseif event == "PLAYER_TARGET_CHANGED" or event == "COMBO_TARGET_CHANGED" then
             onPoints()
         else
             onChange()

@@ -3,7 +3,8 @@
 -- next swing. Values the game may keep secret (the swing's type and duration, attack speeds, range)
 -- are never compared: a secret type is skipped, a secret duration falls back on the weapon's speed.
 
-local Swing = FrogLib:Module("Swing", 2) -- 2: Listen; ADDON_LOADED only till Blizzard_SwingTimer loads
+local Swing = FrogLib:Module("Swing", 3) -- 2: Listen; ADDON_LOADED only till Blizzard_SwingTimer loads;
+-- 3: a secret attack speed keeps the last answer; the range check is turned on
 if not Swing then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -16,14 +17,20 @@ Swing.HANDS = {
     { key = "ranged", type = SwingType.Ranged, label = "Ranged" },
 }
 
--- Whether there's a weapon for the hand (the main hand: always).
+-- [hand key] = whether it had a weapon when last readable, or a swing of it proved one.
+Swing.known = Swing.known or {}
+
+-- Whether there's a weapon for the hand (the main hand: always). Attack speeds turn secret in a fight (a haste proc
+-- reads them again): the last plain answer stands, so an empty hand's bar doesn't come up mid-fight.
 function Swing.HasWeapon(hand)
     if hand.key == "main" then return true end
     local _, off, ranged = UnitAttackSpeed("player")
     local speed
     if hand.key == "off" then speed = off else speed = ranged end
-    if issecret(speed) then return true end
-    return speed ~= nil and speed > 0
+    if issecret(speed) then return Swing.known[hand.key] == true end
+    local has = speed ~= nil and speed > 0
+    Swing.known[hand.key] = has
+    return has
 end
 
 -- The equipped weapon's swing time (haste included), or nil.
@@ -117,6 +124,14 @@ local function Call(Callback, ...)
     if Callback then Callback(...) end
 end
 
+-- PLAYER_SWING_RANGE_UPDATE only comes for swing types with the range check on. Blizzard's own bars turn it off
+-- when they don't need it (hidden, faded), so it's turned on again with each target and fight; never off, as
+-- Blizzard's bars may be the ones in use.
+local function RangeCheck()
+    if not (C_SwingTimer and C_SwingTimer.EnableRangeCheck) then return end
+    for _, hand in ipairs(Swing.HANDS) do pcall(C_SwingTimer.EnableRangeCheck, hand.type, true) end
+end
+
 -- Listens to the game and keeps each hand's timer. opts.accept() -> whether swings count now (not
 -- while samples show); called back: onStart(hand), onShown(), onRange(), onLayout(event), onBlizzard().
 function Swing.NewTracker(opts)
@@ -147,6 +162,7 @@ function Tracker:Listen(on)
     if not FrogLib.Loaded("Blizzard_SwingTimer") then events:RegisterEvent("ADDON_LOADED") end
     pcall(events.RegisterUnitEvent, events, "UNIT_ATTACK_SPEED", "player")
     pcall(events.RegisterUnitEvent, events, "UNIT_FLAGS", "target")
+    RangeCheck()
 end
 
 function Tracker:Hand(swingType)
@@ -197,15 +213,18 @@ function Tracker:OnEvent(event, ...)
         -- Handled even while hidden, so the first swing of a fight is caught.
         local duration, swingType = ...
         local hand = self:Hand(swingType)
+        if hand then Swing.known[hand.key] = true end -- it swung: there's a weapon there
         if hand and (not opts.accept or opts.accept()) and self:Start(hand, duration) then Call(opts.onStart, hand) end
     elseif event == "PLAYER_SWING_RANGE_UPDATE" then
         Call(opts.onRange)
     elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
         -- From the event (self.inCombat, nil until the first): UnitAffectingCombat can lag behind it.
         self.inCombat = event == "PLAYER_REGEN_DISABLED"
+        if self.inCombat then RangeCheck() end
         Call(opts.onShown)
         Call(opts.onRange)
     elseif event == "PLAYER_TARGET_CHANGED" or event == "UNIT_FLAGS" then
+        if event == "PLAYER_TARGET_CHANGED" then RangeCheck() end
         Call(opts.onShown)
         Call(opts.onRange)
     elseif event == "ADDON_LOADED" then

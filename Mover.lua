@@ -1,8 +1,14 @@
 -- FrogLib Mover: dragging a frame to move it, with its place saved by the addon, not the game's
 -- layout cache (SetUserPlaced(false) after each drag, so the two never fight over it).
 
-local Mover = FrogLib:Module("Mover", 1)
+local Mover = FrogLib:Module("Mover", 2) -- 2: a dropped frame lands on whole screen pixels
 if not Mover then return end
+
+-- An offset on a whole screen pixel: dropped between two, a 1 px border smears across both.
+local function OnPixel(value, pixel)
+    if type(value) ~= "number" or not pixel or pixel <= 0 then return value end
+    return math.floor(value / pixel + 0.5) * pixel
+end
 
 -- Left-drag moves the frame (or opts.target, such as a holder), which must be movable and take the
 -- mouse; after the drag, opts.save({ point, "UIParent", relativePoint, x, y }).
@@ -26,6 +32,10 @@ function Mover.Make(frame, opts)
             local _
             point, _, relativePoint, x, y = target:GetPoint()
         end
+        local pixel = FrogLib.Pixel(target)
+        x, y = OnPixel(x, pixel), OnPixel(y, pixel)
+        target:ClearAllPoints()
+        target:SetPoint(point, UIParent, relativePoint, x, y)
         if opts.save then opts.save({ point, "UIParent", relativePoint, x, y }) end
     end)
     -- opts.tint: frame.unlockTint, a blue wash that far past the frame (on BACKGROUND sublevel

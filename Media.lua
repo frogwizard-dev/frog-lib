@@ -2,7 +2,8 @@
 -- letters the client's language needs. An addon's own fonts are listed as "Bundled"; then Frog, the
 -- game's own, EllesmereUI's and anything shared through LibSharedMedia, built fresh each time.
 
-local Media = FrogLib:Module("Media", 4) -- 2: Usable; 3: the "SHADOW" outline; 4: ForClient
+local Media = FrogLib:Module("Media", 5) -- 2: Usable; 3: the "SHADOW" outline; 4: ForClient; 5: SetNameFont,
+-- one retry timer per font string
 if not Media then return end
 
 local GROUPS = { "Bundled", "Frog", "Blizzard", "EllesmereUI", "Shared media" }
@@ -99,13 +100,12 @@ end
 
 -- Redraws a font string's text in its current font. One whose words don't change can keep drawing
 -- the old font (the target's target name rarely changes).
-local function Redraw(fontString)
-    pcall(function()
-        local text = fontString:GetText()
-        fontString:SetText("")
-        fontString:SetText(text)
-    end)
+local function RedrawNow(fontString)
+    local text = fontString:GetText()
+    fontString:SetText("")
+    fontString:SetText(text)
 end
+local function Redraw(fontString) pcall(RedrawNow, fontString) end
 
 -- A font from an addon that isn't loaded (EllesmereUI's, after it's turned off or removed): asking
 -- for it raises an error rather than failing quietly, so it isn't asked for at all.
@@ -154,6 +154,109 @@ function Media.ForClient(path, fallback)
     return STANDARD_TEXT_FONT
 end
 
+-- [fontString] = { wanted = what was last asked for, shadow = our drop shadow is on, retry = the running retry's
+-- token }: kept here, not on the font
+-- string (some are Blizzard's, the cast bar's spell name and the meter's rows).
+Media.fontState = Media.fontState or setmetatable({}, { __mode = "k" })
+local function FontState(fontString)
+    local font = Media.fontState[fontString]
+    if not font then
+        font = {}
+        Media.fontState[fontString] = font
+    end
+    return font
+end
+
+-- What SetFont was last asked for on the font string ("path|size|outline"), or nil.
+function Media.Wanted(fontString)
+    local font = Media.fontState[fontString]
+    return font and font.wanted or nil
+end
+
+-- Taken off again when another outline is chosen (an addon's own shadow, set without it, is left alone). Returns the
+-- outline to hand the game.
+local function Shadow(fontString, outline)
+    if outline == "SHADOW" then
+        -- At least one whole screen pixel down and right, so text drawn small (nameplates) still
+        -- shows it rather than a smudge.
+        local ok, pixel = pcall(FrogLib.Pixel, fontString)
+        local offset = (ok and pixel and pixel > 1) and pixel or 1
+        fontString:SetShadowColor(0, 0, 0, 1)
+        fontString:SetShadowOffset(offset, -offset)
+        FontState(fontString).shadow = true
+        return ""
+    end
+    local font = Media.fontState[fontString]
+    if font and font.shadow then
+        font.shadow = nil
+        fontString:SetShadowOffset(0, 0)
+    end
+    return outline or ""
+end
+
+-- Font families for other people's names: the chosen face for Latin letters, the game's own for the scripts a face
+-- may lack (a plain SetFont drops the game's fallbacks, so a Russian or Chinese name in a Latin-only face draws
+-- blank, even on an English client). Font objects are never freed: one per face, size and outline.
+local ALPHABETS = {
+    { "russian", "Fonts\\FRIZQT___CYR.TTF", 0 }, { "korean", "Fonts\\2002.TTF", 0 },
+    { "simplifiedchinese", "Fonts\\ARKai_T.ttf", 3 }, { "traditionalchinese", "Fonts\\blei00d.TTF", 3 },
+}
+Media.families = Media.families or {}
+Media.familyCount = Media.familyCount or 0
+-- The client's own script takes the size asked for (on a Chinese client every name is drawn in it, so the lift a
+-- Chinese face gets beside Latin letters would make them all too big).
+local OWN_ALPHABET = ({ ruRU = "russian", koKR = "korean", zhCN = "simplifiedchinese",
+    zhTW = "traditionalchinese" })[GetLocale()]
+
+local function Family(path, size, flags)
+    if not CreateFontFamily then return nil end
+    size = math.floor(size * 4 + 0.5) / 4
+    local key = path .. "|" .. size .. "|" .. flags
+    local family = Media.families[key]
+    if family == nil then
+        local known = KNOWN[(path:match("[^\\/]+$") or path):lower()]
+        local members = { { alphabet = "roman", file = path, height = size, flags = flags } }
+        for _, alphabet in ipairs(ALPHABETS) do
+            -- A face with Cyrillic of its own (or its own Cyrillic twin) draws Russian names too.
+            local file = alphabet[2]
+            if alphabet[1] == "russian" then
+                if not known or known.cyrillic then file = path elseif known.twin then file = known.twin end
+            end
+            local lift = alphabet[1] == OWN_ALPHABET and 0 or alphabet[3]
+            members[#members + 1] = { alphabet = alphabet[1], file = file, height = size + lift, flags = flags }
+        end
+        Media.familyCount = Media.familyCount + 1
+        local ok, made = pcall(CreateFontFamily, "FrogLibNameFont" .. Media.familyCount, members)
+        family = ok and made or false
+        Media.families[key] = family
+    end
+    return family or nil
+end
+
+-- A font string that shows other people's names: as SetFont, through a font family so every script draws. A font
+-- object resets the string's colour, justification and shadow, so they're put back (the shadow as Shadow() or the
+-- addon left it). Falls back to SetFont when the face is a missing addon's or families can't be made.
+function Instance:SetNameFont(fontString, path, size, outline)
+    if not fontString then return end
+    if type(path) ~= "string" or FromMissingAddOn(path) then return self:SetFont(fontString, path, size, outline) end
+    local flags = Shadow(fontString, outline)
+    local family = Family(path, size, flags)
+    if not family then return self:SetFont(fontString, path, size, outline) end
+    local font = FontState(fontString)
+    font.wanted, font.retry = path .. "|" .. size .. "|" .. (outline or ""), nil
+    local r, g, b, a = fontString:GetTextColor()
+    local justifyH, justifyV = fontString:GetJustifyH(), fontString:GetJustifyV()
+    local sr, sg, sb, sa = fontString:GetShadowColor()
+    local sx, sy = fontString:GetShadowOffset()
+    fontString:SetFontObject(family)
+    if not FrogLib.issecret(r) then fontString:SetTextColor(r, g, b, a) end
+    fontString:SetJustifyH(justifyH)
+    fontString:SetJustifyV(justifyV)
+    if sr then fontString:SetShadowColor(sr, sg, sb, sa) end
+    if sx then fontString:SetShadowOffset(sx, sy) end
+    Redraw(fontString)
+end
+
 -- outline: the game's ("", "OUTLINE", "THICKOUTLINE"...) or "SHADOW", a drop shadow instead. A font
 -- file WoW hasn't finished loading can be refused at first, so it's retried; the fallback shows till then.
 function Instance:SetFont(fontString, path, size, outline)
@@ -162,23 +265,9 @@ function Instance:SetFont(fontString, path, size, outline)
     local fallback = self.opts.fallbackFont
     path = Media.ForClient(path, fallback)
     fallback = Media.ForClient(fallback)
-    -- Taken off again when another outline is chosen (an addon's own shadow, set without it, is
-    -- left alone).
-    local shadow = outline == "SHADOW"
-    if shadow then
-        outline = ""
-        -- At least one whole screen pixel down and right, so text drawn small (nameplates) still
-        -- shows it rather than a smudge.
-        local ok, pixel = pcall(FrogLib.Pixel, fontString)
-        local offset = (ok and pixel and pixel > 1) and pixel or 1
-        fontString:SetShadowColor(0, 0, 0, 1)
-        fontString:SetShadowOffset(offset, -offset)
-        fontString.frogShadow = true
-    elseif fontString.frogShadow then
-        fontString.frogShadow = nil
-        fontString:SetShadowOffset(0, 0)
-    end
-    fontString.frogFont = wanted
+    outline = Shadow(fontString, outline)
+    local font = FontState(fontString)
+    font.wanted, font.retry = wanted, nil
     local usable = not FromMissingAddOn(path)
     local ok, set = false, false
     if usable then ok, set = pcall(fontString.SetFont, fontString, path, size, outline) end
@@ -186,14 +275,31 @@ function Instance:SetFont(fontString, path, size, outline)
         if not (fallback and fontString:SetFont(fallback, size, outline)) then
             fontString:SetFont(STANDARD_TEXT_FONT, size, outline)
         end
-        for _, delay in ipairs(usable and { 0.2, 1, 3 } or {}) do
-            C_Timer.After(delay, function()
-                -- By now the text may be forbidden (aura text in restricted content); skip it.
-                if fontString.frogFont ~= wanted or (fontString.IsForbidden and fontString:IsForbidden()) then return end
-                local retried, took = pcall(fontString.SetFont, fontString, path, size, outline)
-                if retried and took then Redraw(fontString) end
-            end)
+        if usable then
+            font.retry = {}
+            Media.Retry(fontString, font.retry, path, size, outline)
         end
     end
     Redraw(fontString)
+end
+
+-- A refused font file asked for again after 0.2, 1 and 3 seconds: one chain per font string (token: the latest
+-- SetFont's; any later SetFont or SetNameFont ends it), stopping once it takes.
+local RETRY_AFTER = { 0.2, 0.8, 2 }
+function Media.Retry(fontString, token, path, size, outline, step)
+    step = step or 1
+    local delay = RETRY_AFTER[step]
+    if not delay then return end
+    C_Timer.After(delay, function()
+        -- By now the text may be forbidden (aura text in restricted content), or set to another font.
+        local font = Media.fontState[fontString]
+        if not (font and font.retry == token) or (fontString.IsForbidden and fontString:IsForbidden()) then return end
+        local retried, took = pcall(fontString.SetFont, fontString, path, size, outline)
+        if retried and took then
+            font.retry = nil
+            Redraw(fontString)
+        else
+            Media.Retry(fontString, token, path, size, outline, step + 1)
+        end
+    end)
 end

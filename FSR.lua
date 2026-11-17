@@ -4,7 +4,8 @@
 -- secret spell falls back to a drop in your mana a moment before or after the cast, when your mana can
 -- be read. And the strip they show it with, under a mana bar.
 
-local FSR = FrogLib:Module("FSR", 3) -- 2: NewStrip; 3: Listen reads each mana change once, and only mana's
+local FSR = FrogLib:Module("FSR", 4) -- 2: NewStrip; 3: Listen reads each mana change once, and only mana's;
+-- 4: mana listened to only after a secret cast, nothing for classes without mana
 if not FSR then return end
 
 local issecret = FrogLib.issecret
@@ -71,6 +72,7 @@ end
 function Watcher:OnCast(spellID)
     if issecret(spellID) then
         -- Can't be looked up: a drop in your mana a moment ago, or in a moment, stands in.
+        self:WatchMana()
         local now = GetTime()
         if self.dropAt and now - self.dropAt < WINDOW then
             self:Start(now)
@@ -156,26 +158,41 @@ function FSR.NewStrip(parent, track)
     return strip
 end
 
--- Listens to your casts and mana itself.
-function Watcher:Listen()
-    if self.events then return end
-    local events = CreateFrame("Frame")
-    self.events = events
-    for _, event in ipairs({ "UNIT_SPELLCAST_SUCCEEDED", "UNIT_MAXPOWER" }) do
-        pcall(events.RegisterUnitEvent, events, event, "player")
-    end
+-- Your mana, listened to only once a cast's spell has come secret (its cost can't be looked up, so a drop in your
+-- mana is what tells); until then each cast's cost says it all, and mana ticking up costs nothing.
+function Watcher:WatchMana()
+    local events = self.events
+    if not events or self.watchingMana then return end
+    self.watchingMana = true
+    pcall(events.RegisterUnitEvent, events, "UNIT_MAXPOWER", "player")
     -- Every change of your mana once: UNIT_POWER_FREQUENT has them all (UNIT_POWER_UPDATE came with it, so each
     -- change was read twice); UNIT_POWER_UPDATE only on a client without it.
     if not pcall(events.RegisterUnitEvent, events, "UNIT_POWER_FREQUENT", "player") then
         pcall(events.RegisterUnitEvent, events, "UNIT_POWER_UPDATE", "player")
     end
+    self:ReadMana()
+end
+
+-- Listens to your casts (and, when needed, your mana) itself. Warriors and rogues have no mana: nothing.
+function Watcher:Listen()
+    if self.events then return end
+    local _, class = UnitClass("player")
+    if not issecret(class) and (class == "WARRIOR" or class == "ROGUE") then return end
+    local events = CreateFrame("Frame")
+    self.events = events
+    pcall(events.RegisterUnitEvent, events, "UNIT_SPELLCAST_SUCCEEDED", "player")
+    -- Spells come secret in fights: mana is listened to from your first one too, so the first secret cast has your
+    -- mana from before it to compare with (its drop can come before the cast's event).
+    events:RegisterEvent("PLAYER_REGEN_DISABLED")
     -- A power event's token (a cast's GUID in that place) says which power: rage and energy are skipped.
     events:SetScript("OnEvent", function(_, event, _, token, spellID)
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             self:OnCast(spellID)
+        elseif event == "PLAYER_REGEN_DISABLED" then
+            events:UnregisterEvent(event)
+            self:WatchMana()
         elseif issecret(token) or token == nil or token == "MANA" then
             self:ReadMana()
         end
     end)
-    self:ReadMana()
 end

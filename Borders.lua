@@ -3,7 +3,7 @@
 -- frame's scale: place them again when it changes.
 
 local ADDON = ...
-local Borders = FrogLib:Module("Borders", 5) -- 3: Show, Reach; 4: Carved; 5: NineSlice
+local Borders = FrogLib:Module("Borders", 6) -- 3: Show, Reach; 4: Carved; 5: NineSlice; 6: Forever on a holder
 if not Borders then return end
 
 local Pixel, NoSnap = FrogLib.Pixel, FrogLib.NoSnap
@@ -129,10 +129,12 @@ Borders.ForeverMeta = Borders.ForeverMeta or { __index = Forever }
 
 -- Media\ForeverFrame.tga, 16x16: a dark outline, a light metallic rim brighter along the top and a
 -- dark inner line, each a texel wide, corners cut; 2 texels out, its inner line over the fill's edge.
-function Borders.Forever(bar, layer, sublevel)
-    local border = { bar = bar, parts = {} }
+-- frame: what its textures go on (the bar if not given). One that ignores its parent's scale, set round the bar, keeps
+-- the frame whole screen pixels as the bar's scale changes (nameplates growing), with no placing again.
+function Borders.Forever(bar, layer, sublevel, frame)
+    local border = { bar = bar, frame = frame or bar, parts = {} }
     for _, key in ipairs(FRAME_KEYS) do
-        local texture = bar:CreateTexture(nil, layer or "OVERLAY", nil, sublevel or 5)
+        local texture = border.frame:CreateTexture(nil, layer or "OVERLAY", nil, sublevel or 5)
         texture:SetTexture(Borders.FOREVER_FILE, nil, nil, "NEAREST")
         NoSnap(texture)
         border.parts[key] = texture
@@ -142,7 +144,7 @@ end
 
 -- Nine-sliced at a whole number (1 to 3) of screen pixels per texel, so only its straight edges stretch.
 function Forever:Place(thickness)
-    Borders.NineSlice(self.parts, self.bar, FOREVER_ART, FRAME_OUT, (thickness or 1) * Pixel(self.bar))
+    Borders.NineSlice(self.parts, self.bar, FOREVER_ART, FRAME_OUT, (thickness or 1) * Pixel(self.frame or self.bar))
 end
 
 function Forever:SetShown(shown)
