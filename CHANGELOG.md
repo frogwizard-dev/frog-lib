@@ -1,5 +1,10 @@
 # FrogLib
 
+## 1.11.1
+
+- Cast: a cast bar's time left ("1.4") is written twenty times a second rather than every frame (its tenths only change ten times a second), so FrogFrames' and XIVTarget's cast bars do a third of the work while a cast runs, less at high frame rates.
+- MinimapView: `Across(zoom)`, how many yards the minimap shows at each zoom level, for FrogUI's totem zoom.
+
 ## 1.11.0
 
 - FSR: the strip that shows the five-second rule under a mana bar (a fill and a spark running across the five seconds), written once for FrogFrames, Personal Resource Tweaks and XIVPlayer, which each had their own.

@@ -1,7 +1,7 @@
 -- FrogLib MinimapView: where a place in the world falls on the minimap, for anything drawn over it
--- (Lines' routes, FrogTotems' totem areas). Places are in UnitPosition's order: yards north and west.
+-- (Lines' routes, FrogUI's totem areas). Places are in UnitPosition's order: yards north and west.
 
-local View = FrogLib:Module("MinimapView", 1)
+local View = FrogLib:Module("MinimapView", 2) -- 2: Across(zoom)
 if not View then return end
 
 local issecret = FrogLib.issecret
@@ -13,6 +13,13 @@ local YARDS = {
     indoor = { 300, 240, 180, 120, 80, 50 },
 }
 
+-- The minimap's width in yards at a zoom level (0: furthest out), indoors or out as you are now, by the
+-- table above. Its steps are what count (FrogUI's totem zoom scales them by the client's own view radius).
+function View.Across(zoom)
+    local yards = (IsIndoors and IsIndoors()) and YARDS.indoor or YARDS.outdoor
+    return yards[(zoom or 0) + 1] or yards[#yards]
+end
+
 -- The minimap as it is now: pixels per yard, its radius in pixels, whether it turns, your facing
 -- (0 when it doesn't turn), whether it's square.
 function View.Read()
@@ -22,8 +29,7 @@ function View.Read()
     if radius and not issecret(radius) and radius > 0 then
         across = radius * 2
     else
-        local zoom = Minimap:GetZoom() or 0
-        across = (IsIndoors and IsIndoors() and YARDS.indoor or YARDS.outdoor)[zoom + 1] or 400
+        across = View.Across(Minimap:GetZoom())
     end
     local rotating = GetCVar("rotateMinimap") == "1"
     local facing = 0

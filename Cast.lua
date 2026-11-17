@@ -3,7 +3,8 @@
 -- secret (the spell's name and icon, its times, whether it can be interrupted), so nothing here
 -- tests it: a secret name still counts, the bar fills on the game's own timer, values go into widgets.
 
-local Cast = FrogLib:Module("Cast", 3) -- 2: NewLine; 3: a blank time isn't written every frame
+local Cast = FrogLib:Module("Cast", 4) -- 2: NewLine; 3: a blank time isn't written every frame; 4: a running one
+-- twenty times a second
 if not Cast then return end
 
 local issecret = FrogLib.issecret
@@ -69,7 +70,9 @@ local function WriteTime(bar, fontString)
     if Has(duration) then fontString:SetFormattedText("%.1f", duration:GetRemainingDuration()) end
 end
 
--- The time left on the bar's timer into the font string ("1.4").
+-- The time left on the bar's timer into the font string ("1.4"). Cast.EVERY: how often a running time is written
+-- (its tenths change ten times a second).
+Cast.EVERY = 0.05
 function Cast.ShowTime(bar, fontString)
     pcall(WriteTime, bar, fontString)
 end
@@ -145,6 +148,7 @@ function Cast.NewLine(line)
     local sample = line.sample -- { label, value, time, icon }, or loop = seconds: it fills over and over
     local function Paint(color) line.gauge:SetColor(color[1], color[2], color[3]) end
     local blank = false -- the time is already empty: not written again every frame
+    local wait = 0      -- seconds till the running time is written again
     local function Blank()
         if blank then return end
         blank = true
@@ -152,7 +156,7 @@ function Cast.NewLine(line)
     end
     local driver = Cast.NewDriver({
         show = function(info)
-            blank = false
+            blank, wait = false, 0
             Cast.Fill(line.bar, info)
             line.label:SetText(info.text)
             if line.icon then Cast.SetIcon(line.icon, info.texture) end -- the icon can be secret too
@@ -179,8 +183,9 @@ function Cast.NewLine(line)
         hide = function() holder:Hide() end,
         refresh = line.refresh,
     })
-    -- The time left can be secret, so it only goes straight into SetFormattedText.
-    line.bar:SetScript("OnUpdate", function(bar)
+    -- The time left can be secret, so it only goes straight into SetFormattedText; its tenths change ten times a
+    -- second, so it's written twenty times a second rather than every frame.
+    line.bar:SetScript("OnUpdate", function(bar, elapsed)
         if driver.sample then
             if sample.loop then
                 local left = sample.loop - GetTime() % sample.loop
@@ -198,7 +203,9 @@ function Cast.NewLine(line)
             Blank()
             return
         end
-        blank = false
+        wait = wait - elapsed
+        if not blank and wait > 0 then return end
+        blank, wait = false, Cast.EVERY
         Cast.ShowTime(bar, line.time)
     end)
     return driver

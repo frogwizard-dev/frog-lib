@@ -1,5 +1,5 @@
 -- FrogLib ButtonSkin: FrogUI's button looks, for any button or icon frame with an `icon` texture
--- (action buttons, FrogTotems' timers). look.style: "rounded" (the cooldown manager's rounded mask
+-- (action buttons, FrogUI's totem timers). look.style: "rounded" (the cooldown manager's rounded mask
 -- and thin frame), "square", or "classic" (below). The icon sits in a border (look.border pixels,
 -- look.borderColor): the dark backing showing round it. `look` is the addon's settings table, read
 -- live for the border; the style is set when a button is first dressed (a /reload changes it).
