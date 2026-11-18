@@ -3,9 +3,9 @@
 -- up here each time, so a newer copy of FrogLib's apply to it, and an addon can add its own fields.
 -- A control's setting is get and set functions, or a settings table and a key in it.
 
-local UI = FrogLib:Module("UI", 6) -- 2: "Drop shadow" among the outlines; 3: UI.Column, sidebar windows;
+local UI = FrogLib:Module("UI", 7) -- 2: "Drop shadow" among the outlines; 3: UI.Column, sidebar windows;
 -- 4: a search box on tabbed windows; 5: controls bound to a settings table and key; 6: pages built when
--- first shown
+-- first shown; 7: the aura picker's refusal in combat shown on screen (Util.Warn), not in chat
 if not UI then return end
 
 UI.Controls = UI.Controls or {}
@@ -388,7 +388,7 @@ end
 -- Returns the window (one per owner).
 function Controls.AuraPicker(kit, owner, kind, onAdd, say)
     if InCombatLockdown() then
-        say("Leave combat to browse your current auras.")
+        FrogLib.Util.Warn("Leave combat to browse your current auras.")
         return owner.frogPicker
     end
     local picker = owner.frogPicker

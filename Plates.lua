@@ -4,9 +4,10 @@
 -- hit-test its health bar), its cast bar and auras showing through round the skin's bar, as its code
 -- copes with secret values.
 
-local Plates = FrogLib:Module("Plates", 3) -- 2: crisp cast bar spell names; each plate hears only its own
+local Plates = FrogLib:Module("Plates", 4) -- 2: crisp cast bar spell names; each plate hears only its own
 -- events; your group's plates (skin.party); Blizzard's auras put back when a plate is handed back; 3: see CHANGELOG
--- (enemy or not decided again, your quests only, no threat colours alone, less work per plate)
+-- (enemy or not decided again, your quests only, no threat colours alone, less work per plate); 4: the threat
+-- report's lines wait for the end of combat
 if not Plates then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -487,7 +488,7 @@ function Plates.ThreatReport(say)
     end
     say(live and "threat now:" or string.format("threat as last seen in combat (%ds ago):",
         math.floor(GetTime() - (state.lastSeenAt or 0))))
-    for _, line in ipairs(lines) do print(line) end
+    for _, line in ipairs(lines) do FrogLib.Util.Say(line) end -- in combat, after it (see Util.Say)
 end
 
 ------------------------------------------------------------------------------

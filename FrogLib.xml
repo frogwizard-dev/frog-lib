@@ -30,5 +30,6 @@
 	<Script file="CVar.lua"/>
 	<Script file="MinimapView.lua"/>
 	<Script file="Lines.lua"/>
+	<Script file="MapPins.lua"/>
 	<Script file="UI.lua"/>
 </Ui>

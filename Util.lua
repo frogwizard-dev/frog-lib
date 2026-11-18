@@ -1,6 +1,6 @@
 -- FrogLib Util: small things every addon needs.
 
-local Util = FrogLib:Module("Util", 2) -- 2: Knows
+local Util = FrogLib:Module("Util", 3) -- 2: Knows; 3: Say, Warn, and printing waits for the end of combat
 if not Util then return end
 
 local BANK = Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player
@@ -61,8 +61,45 @@ function Util.Copy(value)
     return copy
 end
 
--- print(...) under the addon's coloured name: ns.Print = FrogLib.Util.Printer("FrogTarget", "ffd100")
+-- A line in chat. In combat it waits for combat to end, the lines in the order they came: a line printed in combat
+-- taints the chat history (EllesmereUI found it on Forever).
+local held, waiter -- the lines waiting, and the frame that waits for the end of combat
+function Util.Say(text)
+    if not InCombatLockdown() then
+        print(text)
+        return
+    end
+    held = held or {}
+    held[#held + 1] = text
+    if not waiter then
+        waiter = CreateFrame("Frame")
+        waiter:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            local lines = held or {}
+            held = nil
+            for _, line in ipairs(lines) do print(line) end
+        end)
+    end
+    waiter:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
+
+-- A refusal the player should see now ("not in combat"): in combat, in the game's red error text over the screen
+-- (as EllesmereUI does: no chat), otherwise in chat.
+function Util.Warn(text)
+    if InCombatLockdown() and UIErrorsFrame then
+        UIErrorsFrame:AddMessage(text, 1, 0.3, 0.3, 1)
+    else
+        FrogLib.Util.Say(text)
+    end
+end
+
+-- print(...) under the addon's coloured name, through Say: ns.Print = FrogLib.Util.Printer("FrogTarget", "ffd100").
+-- Say is looked up on each call, so a newer FrogLib copy loaded by another addon reaches printers made before it.
 function Util.Printer(title, hex)
     local prefix = "|cff" .. hex .. title .. "|r:"
-    return function(...) print(prefix, ...) end
+    return function(...)
+        local parts = { prefix }
+        for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end
+        FrogLib.Util.Say(table.concat(parts, " "))
+    end
 end

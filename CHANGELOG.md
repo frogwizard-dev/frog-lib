@@ -1,5 +1,12 @@
 # FrogLib
 
+## 1.13.0
+
+More of what EllesmereUI has learned about taint on Forever, for the world map and chat.
+
+- MapPins (new): an addon's own pins on the world map, the way EllesmereUI draws its map markers: plain frames on a layer of ours over the map's canvas, placed when the map tells a data provider of ours it has shown, changed map, zoomed or resized. Never the map's own pins or pin pools (acquiring one runs the map's code from ours, marking its scroll container dirty under our taint, and Blizzard's quest pins read that before a call blocked in combat), no hooks on the map, nothing of Blizzard's written. Pins can keep one size on screen or zoom with the map, sit at the level of the map's own pins they're named after, and pass a mouse button on to the map (set out of combat). They're only drawn again when the map, its size or the addon's data changed (a change of map comes as several of the map's calls in a row), and never while the map is hidden. MapPins.Link makes a map pin link for chat: clicked, the game opens the map there itself (the map is never opened, moved or super-tracked by an addon's code). FrogUI's flight points and cave pins and Captain's Log's pins use it.
+- Chat: lines printed during combat (ns.Print from FrogLib's printer, and the new Util.Say for plain lines) wait for combat to end: a line printed in combat taints the chat history. The nameplate threat report's lines too. A refusal ("not in combat") goes in the game's red error text over the screen instead (Util.Warn), as EllesmereUI does; the aura picker's does. Each addon's own printer gets this once it's released with FrogLib 1.13.0 (a printer made by an older copy prints at once); from now on printers look Say up as they print, so later fixes reach them.
+
 ## 1.12.0
 
 Fixes and savings found by comparing the Frog addons with EllesmereUI, which has met these on Forever.
