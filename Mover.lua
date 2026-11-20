@@ -1,7 +1,7 @@
 -- FrogLib Mover: dragging a frame to move it, with its place saved by the addon, not the game's
 -- layout cache (SetUserPlaced(false) after each drag, so the two never fight over it).
 
-local Mover = FrogLib:Module("Mover", 2) -- 2: a dropped frame lands on whole screen pixels
+local Mover = FrogLib:Module("Mover", 3) -- 2: a dropped frame lands on whole screen pixels; 3: opts.secure
 if not Mover then return end
 
 -- An offset on a whole screen pixel: dropped between two, a 1 px border smears across both.
@@ -11,17 +11,23 @@ local function OnPixel(value, pixel)
 end
 
 -- Left-drag moves the frame (or opts.target, such as a holder), which must be movable and take the
--- mouse; after the drag, opts.save({ point, "UIParent", relativePoint, x, y }).
+-- mouse; after the drag, opts.save({ point, "UIParent", relativePoint, x, y }). opts.secure: the frame is (or holds)
+-- secure frames, which can't move in combat, so a drag then does nothing.
 function Mover.Make(frame, opts)
     opts = opts or {}
     local target = opts.target or frame
+    local moving = false
     frame:RegisterForDrag("LeftButton")
     -- opts.grid: the drag shows on FrogLib's layout grid, and lands exactly centred near the middle.
     frame:SetScript("OnDragStart", function()
+        if opts.secure and InCombatLockdown() then return end
+        moving = true
         target:StartMoving()
         if opts.grid and FrogLib.Grid then FrogLib.Grid:Track(target) end
     end)
     frame:SetScript("OnDragStop", function()
+        if not moving then return end
+        moving = false
         target:StopMovingOrSizing()
         target:SetUserPlaced(false)
         local point, relativePoint, x, y

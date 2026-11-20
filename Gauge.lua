@@ -1,9 +1,11 @@
--- FrogLib Gauge: FFXIV gauges (XIVPlayer, XIVTarget, XIVExp, EnmityList) in two styles: "line", a
--- hair-thin bright line with a soft glow and a spark at the fill's end (the modern target bar), and
--- "framed", a capsule in a gold rim with a dark track and a glossy fill (the classic HP/MP/TP bar).
--- Both have round ends. Gauges keep their methods in this part's tables, so a newer copy's apply.
+-- FrogLib Gauge: FFXIV gauges (XIVPlayer, XIVTarget, XIVExp, EnmityList, XIVParty) in three styles: "line", a
+-- hair-thin bright line with a soft glow and a spark at the fill's end (the modern target bar), "framed", a capsule
+-- in a gold rim with a dark track and a glossy fill (the classic HP/MP/TP bar), both with round ends, and "pale", the
+-- party list's: a flat bar with square ends in a one-pixel light border over a dark track. Gauges keep their methods
+-- in this part's tables, so a newer copy's apply.
 
-local Gauge = FrogLib:Module("Gauge", 3) -- 2: incoming heals; 3: an unchanged colour isn't painted again
+local Gauge = FrogLib:Module("Gauge", 4) -- 2: incoming heals; 3: an unchanged colour isn't painted again;
+-- 4: "pale" style, lost health draining (EnableLag)
 if not Gauge then return end
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -14,6 +16,8 @@ local IMMEDIATE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Im
 
 local GOLD_TOP = { 0.92, 0.80, 0.50 }
 local GOLD_BOTTOM = { 0.66, 0.51, 0.27 }
+local PALE_EDGE = { 0.80, 0.85, 0.90, 0.95 } -- the party list's thin light border
+local PALE_TRACK = { 0.03, 0.05, 0.09, 0.75 }
 local RIM = 2 -- gold rim thickness in the framed style
 -- Parts by key, so the loops over them make no new tables.
 local RIM_PARTS = { "rim", "rimL", "rimR" }
@@ -21,6 +25,7 @@ local LINE_PARTS = { "glowTop", "glowBottom", "spark" }
 local SHEENS = { "sheen", "sheenL", "sheenR" }
 local CAPS = { "startCap", "endCap" }
 local SHIELDS = { "ahead", "over" }
+local ROUND_PARTS = { "startCap", "endCap", "trackCap", "trackCapL", "rimL", "rimR" } -- off in the pale style
 
 Gauge.Methods = Gauge.Methods or {}
 local Methods = Gauge.Methods
@@ -150,10 +155,12 @@ function Methods:Anchor()
     self.sheen:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
     if self.heal then self.heal:Anchor() end
     if self.absorb then self:AnchorAbsorb() end
+    if self.lag then self:AnchorLag() end
 end
 
 function Methods:Layout()
-    local height, framed = self.h, self.style == "framed"
+    local height, framed = self.h, self.style ~= "line"
+    local pale = self.style == "pale"
     self.bar:SetHeight(height)
 
     -- Dark border around the fill: 1px in the line style, 2px inside the gold rim.
@@ -188,6 +195,8 @@ function Methods:Layout()
 
     PlaceCap(self.startCap, self.bar, "LEFT", "left", height)
     PlaceCap(self.endCap, self.bar:GetStatusBarTexture(), "RIGHT", "right", height)
+    self.endCap:SetShown(not pale)
+    self.trackCap:Show()
 
     -- The glow suits a hair-thin line; capped so a thick bar in line style doesn't turn into
     -- a haze, and faded further the thicker the bar (see SetColor).
@@ -202,13 +211,30 @@ function Methods:Layout()
     for _, key in ipairs(SHEENS) do
         local sheen = self[key]
         sheen:SetHeight(sheenHeight)
-        sheen:SetShown(framed)
+        sheen:SetShown(framed and not pale)
     end
+    if pale then self:LayoutPale() else self.startCap:Show() end
 
     Repaint(self)
 end
 
--- "line" or "framed".
+-- The pale style: square ends (no caps), the dark track the bar's own size and a light border one screen pixel
+-- round it.
+function Methods:LayoutPale()
+    local pixel = FrogLib.Pixel(self.bar)
+    for _, key in ipairs(ROUND_PARTS) do self[key]:Hide() end
+    self.track:ClearAllPoints()
+    self.track:SetAllPoints(self.bar)
+    self.track:SetVertexColor(PALE_TRACK[1], PALE_TRACK[2], PALE_TRACK[3], PALE_TRACK[4])
+    self.rim:ClearAllPoints()
+    self.rim:SetPoint("TOPLEFT", self.bar, "TOPLEFT", -pixel, pixel)
+    self.rim:SetPoint("BOTTOMRIGHT", self.bar, "BOTTOMRIGHT", pixel, -pixel)
+    local edge = CreateColor(PALE_EDGE[1], PALE_EDGE[2], PALE_EDGE[3], PALE_EDGE[4])
+    self.rim:SetGradient("VERTICAL", edge, edge)
+    self.rim:Show()
+end
+
+-- "line", "framed" or "pale".
 function Methods:SetStyle(style)
     self.style = style
     self:Layout()
@@ -247,7 +273,7 @@ function Methods:SetColor(r, g, b)
         self.color = { r, g, b }
     end
     local coreR, coreG, coreB = r, g, b
-    if self.style ~= "framed" then
+    if self.style == "line" then
         coreR, coreG, coreB = r + (1 - r) * 0.35, g + (1 - g) * 0.35, b + (1 - b) * 0.35
     end
     self.bar:SetStatusBarColor(coreR, coreG, coreB)
@@ -266,10 +292,53 @@ function Methods:SetColor(r, g, b)
     self.spark:SetVertexColor(r + (1 - r) * 0.6, g + (1 - g) * 0.6, b + (1 - b) * 0.6, 0.9)
 end
 
--- Values may be secret; StatusBar setters accept them directly.
+-- Values may be secret; StatusBar setters accept them directly. With the lag on, the fill moves at once and the lag
+-- bar eases after it.
 function Methods:SetValues(value, max, instant)
     self.bar:SetMinMaxValues(0, max)
-    self.bar:SetValue(value, instant and IMMEDIATE or SMOOTH)
+    local lag = self.lag
+    if lag then
+        self.bar:SetValue(value, IMMEDIATE)
+        lag.bar:SetMinMaxValues(0, max)
+        lag.bar:SetValue(value, instant and IMMEDIATE or SMOOTH)
+    else
+        self.bar:SetValue(value, instant and IMMEDIATE or SMOOTH)
+    end
+end
+
+------------------------------------------------------------------------------
+-- Lost health draining (optional: EnableLag once): FFXIV's party list shows what a hit took as a red stretch past
+-- the fill that drains away. A second bar eases to each new value while the fill jumps there, clipped to the
+-- missing part, so only a loss shows (after a heal it's behind the fill). Values can be secret: nothing's added up.
+------------------------------------------------------------------------------
+
+function Methods:EnableLag(r, g, b)
+    if self.lag then return end
+    local bar = self.bar
+    local clip = CreateFrame("Frame", nil, bar)
+    clip:SetClipsChildren(true)
+    clip:SetFrameLevel(bar:GetFrameLevel()) -- over the bar (its child), under incoming heals and shields
+    local lagBar = CreateFrame("StatusBar", nil, clip)
+    lagBar:SetStatusBarTexture(WHITE)
+    lagBar:SetMinMaxValues(0, 1)
+    lagBar:SetValue(0)
+    lagBar:SetAllPoints(bar)
+    self.lag = { clip = clip, bar = lagBar }
+    self:AnchorLag()
+    self:SetLagColor(r or 0.85, g or 0.2, b or 0.15)
+end
+
+-- Follows the fill's edge (re-run when the fill texture is replaced: Anchor).
+function Methods:AnchorLag()
+    local lag = self.lag
+    if not lag then return end
+    lag.clip:ClearAllPoints()
+    lag.clip:SetPoint("TOPLEFT", self.bar:GetStatusBarTexture(), "TOPRIGHT")
+    lag.clip:SetPoint("BOTTOMRIGHT", self.bar, "BOTTOMRIGHT")
+end
+
+function Methods:SetLagColor(r, g, b)
+    if self.lag then self.lag.bar:SetStatusBarColor(r, g, b, 0.9) end
 end
 
 ------------------------------------------------------------------------------

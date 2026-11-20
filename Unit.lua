@@ -2,7 +2,8 @@
 -- (FrogLib.Text) for it. Anything here may come back secret: it's only handed on (to a widget, or
 -- SetFormattedText through the templates), never tested.
 
-local Unit = FrogLib:Module("Unit", 4) -- 2: IsPlayer; secret checks first; 3: the pet's happiness and care; 4: opts.values
+local Unit = FrogLib:Module("Unit", 5) -- 2: IsPlayer; secret checks first; 3: the pet's happiness and care; 4: opts.values;
+-- 5: InRange, Status
 if not Unit then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -75,6 +76,34 @@ function Unit.IsPlayer(unit)
     local unitGUID, playerGUID = UnitGUID(unit), UnitGUID("player")
     if issecret(unitGUID) or issecret(playerGUID) or unitGUID == nil then return nil end
     return unitGUID == playerGUID
+end
+
+-- Whether the unit is near enough to help: true, false, or a secret yes/no for SetAlphaFromBoolean. grouped: a group
+-- member, by the game's group range check (unchecked, as you or someone elsewhere in the world, counts as near);
+-- anyone else by the follow distance, out of combat only (CheckInteractDistance is blocked in combat).
+function Unit.InRange(unit, grouped)
+    if grouped and UnitInRange then
+        local inRange, checked = UnitInRange(unit)
+        if issecret(inRange) then return inRange end
+        if issecret(checked) or checked then return inRange and true or false end
+        return true
+    end
+    if CheckInteractDistance and not InCombatLockdown() then
+        local ok, near = pcall(CheckInteractDistance, unit, 4)
+        if ok and issecret(near) then return near end
+        if ok and near ~= nil then return near and true or false end
+    end
+    return true
+end
+
+-- Why a unit has no health to show: "Offline", "Ghost" or "Dead" (the game's own words) and whether it's offline;
+-- nil while it's alive and here.
+function Unit.Status(unit)
+    if Safe(UnitIsConnected(unit)) == false then return PLAYER_OFFLINE or "Offline", true end
+    if Safe(UnitIsDeadOrGhost(unit)) then
+        return Safe(UnitIsGhost(unit)) and (GHOST or "Ghost") or (DEAD or "Dead"), false
+    end
+    return nil
 end
 
 -- Forever has them in C_PetInfo (the old game had globals); either, whichever this client has.

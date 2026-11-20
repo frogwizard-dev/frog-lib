@@ -1,5 +1,16 @@
 # FrogLib
 
+## 1.14.0
+
+For EnmityList 0.5.0 and the new XIVParty.
+
+- Threat: an addon that asks (EnmityList) has an enemy's threat read through your focus or mouseover when either is that enemy, not only through your target: threat reads as hidden through a nameplate but plainly through those, so EnmityList can show your lead on more enemies than the one you're targeting. The nameplates keep reading only your target's: they look on every threat change of every plate, and in a raid each lead means asking all 80 others. Where the game hides threat altogether, nothing changes.
+- Gauges: a "pale" style, FFXIV's party list bar (the framed capsule in a thin pale rim, flat), and lost health draining away in red past the fill (EnableLag), both for XIVParty.
+- Colours: FFXIV's HP green and the names and colours of each power (MP, TP, RP, FP), shared by XIVPlayer and XIVParty.
+- Units: one range check for group members (faded by the game itself where it keeps the answer hidden), shared by FrogFrames and XIVParty.
+- Mover: a frame that holds secure frames (XIVParty's) can't be dragged in combat, where moving it would be blocked; the drag does nothing until the fight ends.
+- Units: "Dead", "Ghost" or "Offline" for a unit with no health to show (XIVParty).
+
 ## 1.13.0
 
 More of what EllesmereUI has learned about taint on Forever, for the world map and chat.

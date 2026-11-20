@@ -1,7 +1,8 @@
 -- FrogLib Threat: your lead on a unit, for threat text (FrogPlates, EnmityList).
 
-local Threat = FrogLib:Module("Threat", 5) -- 2: Short, FormatGap, SetGapText; 3: secret checks first;
--- 4: your group looked up once a frame, not for every plate; 5: your target's plate read through "target"
+local Threat = FrogLib:Module("Threat", 6) -- 2: Short, FormatGap, SetGapText; 3: secret checks first;
+-- 4: your group looked up once a frame, not for every plate; 5: your target's plate read through "target";
+-- 6: other plates through focus or mouseover (asked for: wide)
 if not Threat then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -39,14 +40,52 @@ local function Others()
     return count
 end
 
+-- Tokens threat may read plainly through, after "target", best first. Only plain ones: the game refuses to find the
+-- plate of a "target of" token (targettarget, pettarget, party1target...), raising an error.
+local READABLE = { "focus", "mouseover" }
+local MAP_EVERY = 0.25 -- seconds a plate -> token map stands (your target's plate is looked up on every call)
+
+-- [plate frame] = the first token above showing that mob, made at most four times a second.
+local byPlate, mappedAt = {}, -1
+
+-- A token's plate, or nil (guarded: the game raises an error for tokens it won't look up).
+local function PlateOf(token)
+    local ok, plate = pcall(C_NamePlate.GetNamePlateForUnit, token)
+    if ok then return plate end
+    return nil
+end
+
+local function MapPlates()
+    local now = GetTime()
+    if now - mappedAt < MAP_EVERY then return end
+    mappedAt = now
+    wipe(byPlate)
+    for i = 1, #READABLE do
+        local token = READABLE[i]
+        if Safe(UnitExists(token)) == true then
+            local plate = PlateOf(token)
+            if plate ~= nil and byPlate[plate] == nil then byPlate[plate] = token end
+        end
+    end
+end
+
 -- The token to read a unit's threat through: threat reads as secret through a nameplate token but plainly through
--- "target" (EllesmereUI found it in game), so your target's plate is read as your target. A plate's token is matched
--- by its plate frame (whether two units are the same can itself be secret where threat is).
-function Threat.Readable(unit)
+-- "target" (EllesmereUI found it in game), so your target's plate is read as your target, and another plate through
+-- whichever of your focus or mouseover shows that mob, if `wide`
+-- (secret through them too where the game hides threat; the callers check). A plate's token is matched by its plate
+-- frame (whether two units are the same can itself be secret where threat is). Wide is for callers that look a few
+-- times a second (EnmityList): per threat event per plate, in a raid each lead read means asking all 80 others.
+function Threat.Readable(unit, wide)
     if unit == "target" or type(unit) ~= "string" then return unit end
     if C_NamePlate and C_NamePlate.GetNamePlateForUnit and unit:find("^nameplate") then
         local plate = C_NamePlate.GetNamePlateForUnit(unit)
-        if plate ~= nil and plate == C_NamePlate.GetNamePlateForUnit("target") then return "target" end
+        if plate == nil then return unit end
+        if plate == C_NamePlate.GetNamePlateForUnit("target") then return "target" end
+        if not wide then return unit end
+        MapPlates()
+        -- Checked again: the token may have moved to another mob since the map was made.
+        local token = byPlate[plate]
+        if token and PlateOf(token) == plate then return token end
         return unit
     end
     if Safe(UnitIsUnit(unit, "target")) == true then return "target" end
@@ -54,9 +93,9 @@ function Threat.Readable(unit)
 end
 
 -- Your threat minus the highest of anyone else in your group, pets too: ahead when positive. nil
--- when the game hides your threat, or you're alone with no one else on it.
-function Threat.Gap(unit)
-    unit = Threat.Readable(unit)
+-- when the game hides your threat, or you're alone with no one else on it. wide: as Readable.
+function Threat.Gap(unit, wide)
+    unit = Threat.Readable(unit, wide)
     local _, _, _, _, mine = UnitDetailedThreatSituation("player", unit)
     if issecret(mine) or mine == nil then return nil end
     local best

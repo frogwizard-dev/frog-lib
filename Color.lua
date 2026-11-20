@@ -2,7 +2,8 @@
 -- tables; the functions return r, g, b. Anything the game keeps secret (a class, a reaction,
 -- whether a mob is tapped) is never tested: that rule doesn't apply, and the next one does.
 
-local Color = FrogLib:Module("Color", 3) -- 2: secret checks first; 3: the game's class colours kept
+local Color = FrogLib:Module("Color", 4) -- 2: secret checks first; 3: the game's class colours kept;
+-- 4: XIV HP green and power names/colours (XIVPlayer, XIVParty)
 if not Color then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -13,6 +14,16 @@ Color.XIV = {
     engaged = { r = 0.95, g = 0.42, b = 0.50 },
     passive = { r = 0.96, g = 0.86, b = 0.56 },
     friend = { r = 0.50, g = 0.78, b = 1.00 },
+    hp = { r = 0.45, g = 0.80, b = 0.30 }, -- the HP gauge's green
+}
+
+-- FFXIV's names and colours for each power: HP, MP, and TP for the energy-like ones, by the power's token.
+Color.XIV_POWER = {
+    MANA = { "MP", { 0.90, 0.45, 0.85 } },
+    ENERGY = { "TP", { 0.95, 0.80, 0.40 } },
+    RAGE = { "RP", { 0.95, 0.38, 0.32 } },
+    FOCUS = { "FP", { 0.95, 0.62, 0.32 } },
+    RUNIC_POWER = { "RP", { 0.35, 0.80, 0.95 } },
 }
 local MANA = { r = 0, g = 0, b = 1 }
 
@@ -104,6 +115,21 @@ function Color.XIVUnit(unit)
         color = Color.XIV.passive
     end
     return color.r, color.g, color.b
+end
+
+-- A power's FFXIV label and colour by its token ("MP", r, g, b); grey with the token's first letters when it has none.
+-- wow: the game's own colour for it instead, where it has one.
+function Color.XIVPower(token, wow)
+    if issecret(token) then token = nil end
+    local info = token and Color.XIV_POWER[token]
+    local label = info and info[1] or (type(token) == "string" and token:sub(1, 2)) or "PW"
+    local r, g, b = 0.7, 0.7, 0.7
+    if info then r, g, b = info[2][1], info[2][2], info[2][3] end
+    if wow then
+        local wowR, wowG, wowB = Color.PowerToken(token)
+        if wowR then r, g, b = wowR, wowG, wowB end
+    end
+    return label, r, g, b
 end
 
 -- The game's colour for a power's token, or nil.
