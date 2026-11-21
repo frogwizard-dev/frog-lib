@@ -1,5 +1,11 @@
 # FrogLib
 
+## 1.15.0
+
+For XIVPlates 0.5.0.
+
+- Nameplates: a skin can ask for every other friendly plate (NPCs, pets and players the game calls friendly, not objects or widget-only plates) as a plate of its own showing only the name, so friendly names can take the addon's font. Like party plates, they stay Blizzard's in dungeons and raids, where the game keeps friendly plates for itself. A friendly plate that turns hostile or joins your group gets an enemy's or a party plate at once (and a name plate again once it's friendly), and someone leaving your group goes back to a name plate. The game's soft-target icon (the gamepad's interact cursor) stays visible on a name plate. A name plate listens only for its name, faction and flags, and never to its health.
+
 ## 1.14.0
 
 For EnmityList 0.5.0 and the new XIVParty.
