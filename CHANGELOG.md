@@ -1,5 +1,11 @@
 # FrogLib
 
+## 1.16.0
+
+For StatSheet 0.6.3 and FrogProt.
+
+- Tank: hit chance counts hit rating from gear as well as hit from talents and buffs, adding the two up as Forever's own character sheet does. Melee hit read only the talent part (a paladin with Precision and 3.9% from gear showed 3%, not 6.9%), and there's now ranged and spell hit read the same way.
+
 ## 1.15.0
 
 For XIVPlates 0.5.0.

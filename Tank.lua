@@ -3,7 +3,8 @@
 -- values the game keeps secret (in combat) raise "unreadable" through Tank.N: call in pcall. `over`:
 -- an enemy's level above yours; `level`: yours (UnitLevel by default); what-if tables take made-up numbers.
 
-local Tank = FrogLib:Module("Tank", 5) -- 3: Shares; 4: spells known through Util.Knows; 5: MissChance, skill over the cap
+local Tank = FrogLib:Module("Tank", 6) -- 3: Shares; 4: spells known through Util.Knows; 5: MissChance, skill over the cap;
+-- 6: hit counts hit rating
 if not Tank then return end
 
 local issecret = FrogLib.issecret
@@ -96,9 +97,23 @@ function Tank.ArmorNow()
     return N(effective)
 end
 
-function Tank.MeleeHit()
-    return GetHitModifier and N(GetHitModifier() or 0) or 0
+-- Hit from rating (gear) plus hit from talents and buffs, added up as Forever's own sheet does
+-- (PaperDollFrame_SetHitChance). The rating constants are Blizzard's (PaperDollFrame.lua).
+-- Nil counts as 0; a secret raises "unreadable" before anything tests it.
+local function Part(Read, ...)
+    if not Read then return 0 end
+    local value = Read(...)
+    if issecret(value) then error("unreadable", 0) end
+    return value or 0
 end
+
+local function Hit(rating, Modifier)
+    return Part(GetCombatRatingBonus, rating) + Part(Modifier)
+end
+
+function Tank.MeleeHit() return Hit(CR_HIT_MELEE or 6, GetHitModifier) end
+function Tank.RangedHit() return Hit(CR_HIT_RANGED or 7, GetRangedHitModifier or GetHitModifier) end
+function Tank.SpellHit() return Hit(CR_HIT_SPELL or 8, GetSpellHitModifier) end
 
 ------------------------------------------------------------------------------
 -- Taking hits
