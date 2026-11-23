@@ -3,8 +3,8 @@
 -- values the game keeps secret (in combat) raise "unreadable" through Tank.N: call in pcall. `over`:
 -- an enemy's level above yours; `level`: yours (UnitLevel by default); what-if tables take made-up numbers.
 
-local Tank = FrogLib:Module("Tank", 6) -- 3: Shares; 4: spells known through Util.Knows; 5: MissChance, skill over the cap;
--- 6: hit counts hit rating
+local Tank = FrogLib:Module("Tank", 7) -- 3: Shares; 4: spells known through Util.Knows; 5: MissChance, skill over the cap;
+-- 6: hit counts hit rating; 7: an item's tooltip-read stats kept by link
 if not Tank then return end
 
 local issecret = FrogLib.issecret
@@ -378,13 +378,21 @@ end
 
 -- { str, agi, sta, ..., dps } from C_Item.GetItemStats; `full` also reads defense, dodge, parry,
 -- block, block value, hit and crit, from the tooltip when GetItemStats lacks them.
+-- `full`'s stats by item link (a link's stats never change; reading its tooltip is the costly part),
+-- emptied once it holds this many.
+local fullKept, fullCount, FULL_KEEP = {}, 0, 200
+local FULL_NAMES = { "defense", "dodge", "parry", "blockChance", "blockValue", "hit", "crit" }
+
 function Tank.ItemStats(link, full)
     local stats = {}
     local itemStats = link and C_Item.GetItemStats(link) or {}
     for name, key in pairs(KEYS) do stats[name] = tonumber(itemStats[key]) or 0 end
     stats.sp = math.max(stats.sp, stats.spdmg)
     stats.mp5 = stats.mp5 + stats.mp5b
-    if full then
+    local kept = full and link and fullKept[link]
+    if kept then
+        for i, name in ipairs(FULL_NAMES) do stats[name] = kept[i] end
+    elseif full then
         local lines
         local function Lines()
             if lines == nil then lines = link and TooltipLines(link) or false end
@@ -406,6 +414,13 @@ function Tank.ItemStats(link, full)
         end
         for name, pattern in pairs(TIP_ONLY) do
             if stats[name] == 0 and link then stats[name] = FromLines(Lines(), pattern) end
+        end
+        -- Kept once its tooltip could be read (or wasn't needed).
+        if link and lines ~= false then
+            if fullCount >= FULL_KEEP then fullKept, fullCount = {}, 0 end
+            local values = {}
+            for i, name in ipairs(FULL_NAMES) do values[i] = stats[name] end
+            fullKept[link], fullCount = values, fullCount + 1
         end
     end
     return stats

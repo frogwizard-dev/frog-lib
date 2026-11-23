@@ -1,5 +1,12 @@
 # FrogLib
 
+## 1.17.0
+
+For StatSheet 0.7.0, FrogUI and FrogProt.
+
+- SpellPower (new): a spell's average damage or healing with your spell power in, read from the game's own tooltip with a pattern and coefficients the addon carries (made by _tools/make_spell_power.py), counting the lower spell power of spells learned before level 20. FrogUI's action button averages moved here, so StatSheet's heals use the same reading.
+- Tank: an item's stats read off its tooltip (defense, dodge, parry, block, green hit and crit) are kept by link, so a tooltip shown again (bag buttons refresh it five times a second) doesn't read it again.
+
 ## 1.16.0
 
 For StatSheet 0.6.3 and FrogProt.
