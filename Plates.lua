@@ -4,10 +4,11 @@
 -- hit-test its health bar), its cast bar and auras showing through round the skin's bar, as its code
 -- copes with secret values.
 
-local Plates = FrogLib:Module("Plates", 5) -- 2: crisp cast bar spell names; each plate hears only its own
+local Plates = FrogLib:Module("Plates", 6) -- 2: crisp cast bar spell names; each plate hears only its own
 -- events; your group's plates (skin.party); Blizzard's auras put back when a plate is handed back; 3: see CHANGELOG
 -- (enemy or not decided again, your quests only, no threat colours alone, less work per plate); 4: the threat
--- report's lines wait for the end of combat; 5: friendly name plates (skin.names, plate.nameOnly)
+-- report's lines wait for the end of combat; 5: friendly name plates (skin.names, plate.nameOnly); 6: their health
+-- too if the skin asks (skin.nameBars)
 if not Plates then return end
 
 local issecret, Safe = FrogLib.issecret, FrogLib.Safe
@@ -662,10 +663,13 @@ local FRIEND_EVENTS = { "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_NAME_UPDATE", "UN
 -- A plate not taken hears only what could make it one to take; a name plate the same (its name, and
 -- whether it stops being a name plate).
 local WATCH_EVENTS = { "UNIT_FLAGS", "UNIT_FACTION", "UNIT_NAME_UPDATE" }
+-- A name plate with a health bar (state.nameBars): a friend's and its flags.
+local NAME_BAR_EVENTS = { "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_NAME_UPDATE", "UNIT_LEVEL", "UNIT_FACTION", "UNIT_FLAGS" }
 
 -- Its unit's events on a frame for its token, so the game sends this plate's alone, not every unit's.
 -- Tokens come back, so the frame stays; a friend's or a watched one stops listening when its plate goes
--- (Remove), so a stranger's plate on that token later costs nothing. kind: "foe", "friend", "name" or "watch".
+-- (Remove), so a stranger's plate on that token later costs nothing. kind: "foe", "friend", "name", "namebar" or
+-- "watch".
 local function Listen(unit, kind)
     local frame = state.tokenFrames[unit]
     if frame and frame.kind == kind then return end
@@ -680,6 +684,8 @@ local function Listen(unit, kind)
         for _, event in ipairs(FRIEND_EVENTS) do pcall(frame.RegisterUnitEvent, frame, event, unit) end
     elseif kind == "watch" or kind == "name" then
         for _, event in ipairs(WATCH_EVENTS) do pcall(frame.RegisterUnitEvent, frame, event, unit) end
+    elseif kind == "namebar" then
+        for _, event in ipairs(NAME_BAR_EVENTS) do pcall(frame.RegisterUnitEvent, frame, event, unit) end
     else
         for event in pairs(UNIT_EVENTS) do pcall(frame.RegisterUnitEvent, frame, event, unit) end
     end
@@ -719,7 +725,8 @@ end
 -- A plate of your group's (see WatchGroup, a switch of its own) has plate.friend set; the skin leaves
 -- Blizzard's cast bar and auras be on it. A member you can attack (a duel) gets an enemy's plate, or
 -- Blizzard's. Every other friendly plate, NPC or player, is a name plate (plate.friend and plate.nameOnly)
--- while the skin wants them (state.names, see Refresh). refreshing: Refresh styles the plates for your
+-- while the skin wants them (state.names, see Refresh); it hears its health too while the skin draws a bar on
+-- them (state.nameBars), and only its name otherwise. refreshing: Refresh styles the plates for your
 -- target once, after adding them all.
 function Add(unit, refreshing)
     local skin = state.skin
@@ -751,7 +758,7 @@ function Add(unit, refreshing)
     plate.unit, plate.uf, plate.friend, plate.nameOnly = unit, unitFrame, friend or nil, named or nil
     state.byUnit[unit] = plate
     if state.driver then
-        Listen(unit, (named and "name") or (friend and "friend") or "foe")
+        Listen(unit, (named and (state.nameBars and "namebar" or "name")) or (friend and "friend") or "foe")
         Drive()
     end
     skin.layout(plate)
@@ -781,7 +788,7 @@ function Remove(unit)
         return
     end
     state.byUnit[unit] = nil
-    if frame and (frame.kind == "friend" or frame.kind == "name") then
+    if frame and (frame.kind == "friend" or frame.kind == "name" or frame.kind == "namebar") then
         frame:UnregisterAllEvents()
         frame.kind = nil
     end
@@ -884,6 +891,8 @@ function Plates.Refresh()
     WatchGroup()
     -- Optional skin.names(): true while the skin wants every other friendly plate as a name alone.
     state.names = state.skin.names and state.skin.names() and true or false
+    -- Optional skin.nameBars(): true while it draws their health too, so they hear it.
+    state.nameBars = state.names and state.skin.nameBars and state.skin.nameBars() and true or false
     for unit in pairs(state.byUnit) do Remove(unit) end
     for i = 1, 40 do
         local unit = "nameplate" .. i

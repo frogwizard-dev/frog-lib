@@ -1,5 +1,11 @@
 # FrogLib
 
+## 1.18.0
+
+For XIVPlates 0.6.0.
+
+- Nameplates: a skin that shows friendly plates outside your group can ask for their health too, to draw a health bar on them. Those plates then listen for their health and level as well as their name, faction and flags; without the ask they still never hear their health.
+
 ## 1.17.0
 
 For StatSheet 0.7.0, FrogUI and FrogProt.
