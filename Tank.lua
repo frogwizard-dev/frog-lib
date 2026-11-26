@@ -3,8 +3,8 @@
 -- values the game keeps secret (in combat) raise "unreadable" through Tank.N: call in pcall. `over`:
 -- an enemy's level above yours; `level`: yours (UnitLevel by default); what-if tables take made-up numbers.
 
-local Tank = FrogLib:Module("Tank", 7) -- 3: Shares; 4: spells known through Util.Knows; 5: MissChance, skill over the cap;
--- 6: hit counts hit rating; 7: an item's tooltip-read stats kept by link
+local Tank = FrogLib:Module("Tank", 8) -- 3: Shares; 4: spells known through Util.Knows; 5: MissChance, skill over the cap;
+-- 6: hit counts hit rating; 7: an item's tooltip-read stats kept by link; 8: Forever's threat numbers, TalentRank
 if not Tank then return end
 
 local issecret = FrogLib.issecret
@@ -241,7 +241,11 @@ function Tank.HitNeeded(over, whatIf)
 end
 
 ------------------------------------------------------------------------------
--- Threat: your multiplier from stance or form, talents and Salvation
+-- Threat: your multiplier from stance or form and talents, by Forever's own spell data (SpellEffect aura 10, threat;
+-- read with _tools/casc.py on 2026-11-25). Forever's numbers aren't Classic's: Defensive Stance +80% (Classic 30%),
+-- Bear Form +115% (30%), Righteous Fury +33% on everything and a further +90% on Holy; Defiance multiplies
+-- Defensive Stance's threat while a shield is on (7/13/20% by rank); Feral Instinct and Improved Righteous Fury add
+-- no threat; there is no Blessing of Salvation.
 ------------------------------------------------------------------------------
 
 -- Any of these spells known (a talent's ranks, or a spell's).
@@ -256,7 +260,7 @@ end
 -- The active stance or form's spell.
 local function FormSpell()
     local form = GetShapeshiftForm and GetShapeshiftForm() or 0
-    if form == 0 or not GetShapeshiftFormInfo then return nil end
+    if issecret(form) or form == 0 or not GetShapeshiftFormInfo then return nil end
     local _, _, _, spellID = GetShapeshiftFormInfo(form)
     return spellID
 end
@@ -271,46 +275,111 @@ local function HasBuff(...)
     return false
 end
 
-local WARRIOR_STANCES = { [71] = { 1.3, "Defensive Stance" }, [2457] = { 0.8, "Battle Stance" }, [2458] = { 0.8, "Berserker Stance" } }
+-- Talent ranks on Forever's talent tree (C_Traits): [talent spell] = rank, read once and again after a talent change.
+-- nil when there's no tree to read (Classic's talents: KnowsRank instead).
+local ranks, rankWatch
+local function TalentRank(spellID)
+    local traits = C_Traits
+    local configID = C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID()
+    if not traits or issecret(configID) or not configID then return nil end
+    if not rankWatch then
+        rankWatch = CreateFrame("Frame")
+        -- The list and entering the world too: a tree read before it had loaded counts every talent as untaken.
+        for _, event in ipairs({ "TRAIT_CONFIG_UPDATED", "TRAIT_CONFIG_LIST_UPDATED", "PLAYER_TALENT_UPDATE",
+            "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_ENTERING_WORLD" }) do
+            pcall(rankWatch.RegisterEvent, rankWatch, event)
+        end
+        rankWatch:SetScript("OnEvent", function() ranks = nil end)
+    end
+    if not ranks then
+        local found = {}
+        local okConfig, config = pcall(traits.GetConfigInfo, configID)
+        local treeID = okConfig and type(config) == "table" and type(config.treeIDs) == "table" and config.treeIDs[1]
+        local okNodes, nodes = false, nil
+        if treeID then okNodes, nodes = pcall(traits.GetTreeNodes, treeID) end
+        if not okNodes or type(nodes) ~= "table" then return nil end
+        for _, nodeID in ipairs(nodes) do
+            local okNode, node = pcall(traits.GetNodeInfo, configID, nodeID)
+            local rank = okNode and type(node) == "table" and (node.activeRank or node.ranksPurchased) or 0
+            if issecret(rank) or type(rank) ~= "number" then rank = 0 end
+            local entryID = rank > 0 and type(node.activeEntry) == "table" and node.activeEntry.entryID
+            local okEntry, entry = false, nil
+            if entryID then okEntry, entry = pcall(traits.GetEntryInfo, configID, entryID) end
+            local definitionID = okEntry and type(entry) == "table" and entry.definitionID
+            local okDef, definition = false, nil
+            if definitionID then okDef, definition = pcall(traits.GetDefinitionInfo, definitionID) end
+            local spell = okDef and type(definition) == "table" and definition.spellID
+            if spell and not issecret(spell) then found[spell] = math.max(found[spell] or 0, rank) end
+        end
+        ranks = found
+    end
+    return ranks[spellID] or 0
+end
+Tank.TalentRank = TalentRank
+
+local function HasShield()
+    local link = GetInventoryItemLink("player", INVSLOT_OFFHAND or 17)
+    if not link or issecret(link) then return false end
+    local _, _, _, _, _, classID, subclassID = C_Item.GetItemInfoInstant(link)
+    return classID == ((Enum.ItemClass and Enum.ItemClass.Armor) or 4)
+        and subclassID == ((Enum.ItemArmorSubclass and Enum.ItemArmorSubclass.Shield) or 6)
+end
+
+local WARRIOR_STANCES = { [71] = { 1.8, "Defensive Stance" }, [2457] = { 0.8, "Battle Stance" },
+    [2458] = { 0.8, "Berserker Stance" }, [412513] = { 0.7, "Gladiator Stance" } }
 local BEAR = { [5487] = true, [9634] = true }
 local CAT = 768
+-- Defiance: Forever's single talent spell (its value by rank), and Classic's rank spells for clients without the tree.
+local DEFIANCE_SPELL, DEFIANCE_BY_RANK = 12792, { 7, 13, 20 }
 local DEFIANCE = { 12303, 12788, 12789, 12791, 12792 }
-local FERAL_INSTINCT = { 16947, 16948, 16949, 16950, 16951 }
-local IMPROVED_FURY = { 20468, 20469, 20470 }
+-- Righteous Fury (25780): +33% on everything and "an additional" +90% on Holy, taken as added: +123% on Holy, the
+-- very total Season of Discovery's version (407627, if a client has it) states outright beside its +50% on all but
+-- Holy. (Whether the server adds or multiplies two threat effects isn't in the client data: unverified in game.)
+local FURY = { [25780] = { all = 1.33, holy = 2.23 }, [407627] = { all = 1.5, holy = 2.23 } }
 Tank.DEFIANCE = DEFIANCE
 Tank.KnowsRank, Tank.HasBuff = KnowsRank, HasBuff
 
--- Your threat multiplier on what you do, and the parts it's made of ({ label, factor }).
+-- Your threat multiplier on what you do, the parts it's made of ({ label, factor }), and, for a paladin under
+-- Righteous Fury, the multiplier on Holy spells and attacks (more than on the rest).
 function Tank.Threat()
-    local class, parts, multiplier = Class(), {}, 1
+    local class, parts, multiplier, holy = Class(), {}, 1, nil
     local function Add(label, factor)
         parts[#parts + 1] = { label, factor }
         multiplier = multiplier * factor
     end
     if class == "WARRIOR" then
-        local stance = WARRIOR_STANCES[FormSpell() or 0]
+        local spell = FormSpell()
+        local stance = WARRIOR_STANCES[spell or 0]
         if stance then Add(stance[2], stance[1]) end
-        local rank = KnowsRank(DEFIANCE)
-        if rank > 0 and stance and stance[1] > 1 then Add("Defiance", 1 + 0.03 * rank) end
+        if spell == 71 and HasShield() then
+            local rank = TalentRank(DEFIANCE_SPELL)
+            local share = 0
+            if rank then
+                share = rank > 0 and DEFIANCE_BY_RANK[math.min(rank, #DEFIANCE_BY_RANK)] or 0
+            elseif not C_Traits then
+                share = 3 * KnowsRank(DEFIANCE) -- Classic's talents: 3% a rank
+            end -- a tree not readable yet: left out rather than guessed
+            if share > 0 then Add("Defiance (shield)", 1 + share / 100) end
+        end
     elseif class == "DRUID" then
-        if BEAR[FormSpell() or 0] then
-            Add("Bear Form", 1.3)
-            local rank = KnowsRank(FERAL_INSTINCT)
-            if rank > 0 then Add("Feral Instinct", 1 + 0.03 * rank) end
-        elseif FormSpell() == CAT then
+        local spell = FormSpell()
+        if BEAR[spell or 0] then
+            Add("Bear Form", 2.15)
+        elseif spell == CAT then
             Add("Cat Form", 0.71)
         end
     elseif class == "ROGUE" then
         Add("Rogues", 0.71)
     elseif class == "PALADIN" then
-        if HasBuff(25780) then
-            local rank = KnowsRank(IMPROVED_FURY)
-            -- Improved Righteous Fury adds a sixth more of the bonus per rank (x1.7, x1.8, x1.9).
-            Add("Righteous Fury (holy spells)", 1 + 0.6 * (1 + rank / 6))
+        for spellID, fury in pairs(FURY) do
+            if HasBuff(spellID) then
+                holy = multiplier * fury.holy
+                Add("Righteous Fury", fury.all)
+                break
+            end
         end
     end
-    if HasBuff(1038, 25895) then Add("Blessing of Salvation", 0.7) end
-    return multiplier, parts
+    return multiplier, parts, holy
 end
 
 ------------------------------------------------------------------------------

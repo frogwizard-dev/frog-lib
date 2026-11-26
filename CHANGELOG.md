@@ -1,5 +1,11 @@
 # FrogLib
 
+## 1.19.0
+
+For StatSheet and FrogProt.
+
+- Tank: threat multipliers are Forever's own (read from its spell data), not Classic's. Defensive Stance x1.8 (was x1.3), Bear Form x2.15 (was x1.3), Gladiator Stance x0.7. Defiance multiplies Defensive Stance's threat only with a shield on, by its rank on Forever's talent tree (7/13/20%). Righteous Fury is x1.33 on everything and x2.23 on Holy (+33% and +90% added, the total Forever's other Righteous Fury spell states; Tank.Threat's third return is the Holy multiplier). Feral Instinct and Improved Righteous Fury no longer count (on Forever they're Swipe damage and damage taken), and Blessing of Salvation is gone (Forever has none). New Tank.TalentRank reads a talent's rank from the tree.
+
 ## 1.18.0
 
 For XIVPlates 0.6.0.
